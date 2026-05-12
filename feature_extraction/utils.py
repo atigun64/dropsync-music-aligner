@@ -2,6 +2,12 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 
 def beat_sync(x, beat_times, frame_times):
+    """
+      Takes an array x where x[i] represent a feature at frame i.
+      And makes an array vals[i], 
+      which represent the same feature for beat i
+      which is average of x[beat_times[i]: beat_times[i+1]]
+    """
     vals = []
     for i, t0 in enumerate(beat_times):
         print(t0)

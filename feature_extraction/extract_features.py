@@ -19,7 +19,7 @@ def extract_features(audio_path):
     rhythm = es.RhythmExtractor2013(method="multifeature")
     out = rhythm(y_es)
 
-    # Usually: out[0] = bpm, out[1] = beat timestamps
+    # Expected: out[0] = bpm, out[1] = beat timestamps
     bpm = float(out[0])
     beat_times = np.array(out[1], dtype=float)
 

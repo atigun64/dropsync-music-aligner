@@ -195,7 +195,7 @@ class BeamSearch(Optimizer):
         # simple 3-point search
         mid = (min_speed + max_speed) / 2.0
 
-        speeds = [min_speed, mid, max_speed]
+        speeds = [min_speed, (min_speed + mid) / 2.0 , mid, (max_speed + mid) / 2.0, max_speed]
 
         # dedupe
         out: list[float] = []

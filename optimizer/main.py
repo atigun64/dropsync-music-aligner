@@ -13,7 +13,7 @@ def build_test_query() -> Query:
 
     # Requested drops in seconds -> convert to ticks
     q.add_annotation(PointAnnotation("drop", time=sec_to_ticks(30.0), strength=1.0))
-    q.add_annotation(PointAnnotation("drop", time=sec_to_ticks(95.0), strength=0.01))
+    q.add_annotation(PointAnnotation("drop", time=sec_to_ticks(95.0), strength=1.0))
     q.add_annotation(PointAnnotation("drop", time=sec_to_ticks(150.0), strength=0.1))
 
     return q

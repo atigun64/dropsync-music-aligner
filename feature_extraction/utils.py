@@ -10,7 +10,6 @@ def beat_sync(x, beat_times, frame_times):
     """
     vals = []
     for i, t0 in enumerate(beat_times):
-        print(t0)
         t1 = beat_times[i + 1] if i < len(beat_times) - 1 else frame_times[-1]
         mask = (frame_times >= t0) & (frame_times < t1)
         vals.append(np.mean(x[mask]) if np.any(mask) else np.nan)
@@ -26,3 +25,21 @@ def beat_sync(x, beat_times, frame_times):
 
 def smooth(x, sigma=1.0):
     return gaussian_filter1d(x, sigma=sigma) if len(x) > 5 else x
+
+
+def robust_scale(x):
+    x = np.asarray(x, dtype=float)
+    med = np.median(x)
+    mad = np.median(np.abs(x - med))
+    return 1.4826 * mad + 1e-9
+
+
+def robust_z(x):
+    x = np.asarray(x, dtype=float)
+    med = np.median(x)
+    scale = robust_scale(x)
+    return (x - med) / scale
+
+
+def sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))

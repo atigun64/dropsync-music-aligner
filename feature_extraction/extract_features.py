@@ -48,7 +48,7 @@ def extract_features(audio_path):
 
     frame_times = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop)
 
-    E = beat_sync(rms, beat_times, frame_times, frame_times)
+    E = beat_sync(rms, beat_times, frame_times)
     O = beat_sync(onset_env, beat_times, frame_times)
     C = beat_sync(centroid, beat_times, frame_times)
     F = beat_sync(flatness, beat_times, frame_times)

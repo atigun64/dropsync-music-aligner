@@ -182,6 +182,9 @@ def robust_z(x):
     return (x - med) / scale
 
 
+DROP_LEAD_BEATS = -5
+
+
 def build_candidate_score(E, O, C, B):
     E = np.asarray(E, dtype=float)
     O = np.asarray(O, dtype=float)
@@ -194,7 +197,6 @@ def build_candidate_score(E, O, C, B):
     C = C[:n]
     B = B[:n]
 
-    # normalize per song
     Ez = robust_z(E)
     Oz = robust_z(O)
     Cz = robust_z(C)
@@ -202,10 +204,10 @@ def build_candidate_score(E, O, C, B):
 
     score = np.zeros(n, dtype=float)
 
-    for i in range(20, n - 10):
-        pre = slice(i - 16, i - 10)
-        build = slice(i - 10, i - 4)
-        drop = slice(i, i + 4)
+    for i in range(20 + DROP_LEAD_BEATS, n - 10 + DROP_LEAD_BEATS):
+        pre = slice(i - 16 - DROP_LEAD_BEATS, i - 10 - DROP_LEAD_BEATS)
+        build = slice(i - 10 - DROP_LEAD_BEATS, i - 4 - DROP_LEAD_BEATS)
+        drop = slice(i - DROP_LEAD_BEATS, i + 4 - DROP_LEAD_BEATS)
 
         pre_E = np.mean(Ez[pre])
         build_E = np.mean(Ez[build])
@@ -223,7 +225,6 @@ def build_candidate_score(E, O, C, B):
         build_B = np.mean(Bz[build])
         drop_B = np.mean(Bz[drop])
 
-        # how much the buildup rises before the drop
         build_up = (
             0.40 * sigmoid(build_E - pre_E) +
             0.15 * sigmoid(build_O - pre_O) +
@@ -231,7 +232,6 @@ def build_candidate_score(E, O, C, B):
             0.30 * sigmoid(build_B - pre_B)
         )
 
-        # how much the actual drop jumps above the build
         drop_jump = (
             0.40 * sigmoid(drop_E - build_E) +
             0.15 * sigmoid(drop_O - build_O) +
@@ -239,7 +239,6 @@ def build_candidate_score(E, O, C, B):
             0.35 * sigmoid(drop_B - build_B)
         )
 
-        # overall contrast from pre to drop
         total_contrast = (
             0.35 * sigmoid(drop_E - pre_E) +
             0.15 * sigmoid(drop_O - pre_O) +
@@ -254,6 +253,7 @@ def build_candidate_score(E, O, C, B):
         )
 
     return score
+
 
 
 

@@ -9,7 +9,7 @@ from sklearn.metrics import average_precision_score
 from .data import Sample
 
 def train_model(labeled_samples: List[Sample]) -> Pipeline:
-    X = np.vstack([s.x for s in labeled_samples])
+    X = np.vstack([s.x.reshape(-1) for s in labeled_samples])
     y = np.array([s.y for s in labeled_samples], dtype=int)
 
     model = Pipeline([

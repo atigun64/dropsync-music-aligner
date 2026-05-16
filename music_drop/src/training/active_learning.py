@@ -23,7 +23,8 @@ def active_learning_loop(
     seed = label_batch(seed)
 
     labeled_samples = seed
-    unlabeled_pool = [s for s in unlabeled_pool if (s.track_id, s.beat_idx) not in {(x.track_id, x.beat_idx) for x in seed}]
+    seed_keys = {(x.track_id, x.beat_idx) for x in seed}
+    unlabeled_pool = [s for s in unlabeled_pool if (s.track_id, s.beat_idx) not in seed_keys]
 
     # Proper validation set: label once and keep fixed
     val_pool = build_labeled_eval_set(val_track_ids, heuristic_per_track=10, background_per_track=10)

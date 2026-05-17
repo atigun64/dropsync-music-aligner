@@ -17,4 +17,5 @@ def robust_z(x):
     return (x - med) / scale
 
 def sigmoid(x):
+    x = np.clip(x, -20, 20)
     return 1.0 / (1.0 + np.exp(-x))

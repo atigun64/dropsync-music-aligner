@@ -4,12 +4,15 @@ from typing import List
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import average_precision_score
 
 from .data import Sample
+from .utils import sample_to_vector
 
 def train_model(labeled_samples: List[Sample]) -> Pipeline:
-    X = np.vstack([s.x.reshape(-1) for s in labeled_samples])
+    X = np.stack([
+        sample_to_vector(s)
+        for s in labeled_samples
+    ])
     y = np.array([s.y for s in labeled_samples], dtype=int)
 
     model = Pipeline([

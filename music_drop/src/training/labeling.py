@@ -1,21 +1,118 @@
-import numpy as np
 from typing import List
+from pathlib import Path
+import json
 
 from .data import Sample
+from .sampling import make_sample
+
+from music_core import window_times
+from music_drop.src.cache import AudioFeatureCache
+from music_drop.src.ui import UISample, UI
+
+
+LABEL_DIR = Path("music_drop/data/labeled_samples")
+
+def _label_file(split: str) -> Path:
+    LABEL_DIR.mkdir(parents=True, exist_ok=True)
+    return LABEL_DIR / f"{split}.jsonl"
+
+
+def _sample_key(track_id: str, beat_idx: int) -> str:
+    return f"{track_id}:{beat_idx}"
+
 
 def label_batch(samples: List[Sample]) -> List[Sample]:
-    """
-    Ask the human to label each sample.
-    Replace this with your GUI / annotation tool if you have one.
-    """
+    ui_samples: list[UISample] = []
+
+    cache = AudioFeatureCache()
+
     for s in samples:
-        print(f"\nTrack: {s.track_id}")
-        print(f"Beat: {s.beat_idx}")
-        print(f"Heuristic score: {s.hscore:.3f}")
-        while True:
-            ans = input("Drop? [1=yes, 0=no]: ").strip()
-            if ans in ("0", "1"):
-                s.y = int(ans)
-                break
-            print("Please type 1 or 0.")
+        audio_path = cache.audio_path_from_id(s.track_id)
+        beat_times = cache.get_by_id(s.track_id)["beat_times"]
+
+        ui_samples.append(
+            UISample(
+                track_path=audio_path,
+                key_point=beat_times[s.beat_idx],
+                time_window=window_times(beat_idx=s.beat_idx, beat_times=beat_times),
+            )
+        )
+
+    labels = UI.sample(ui_samples)
+
+    labeled_samples: List[Sample] = []
+    for idx, s in enumerate(samples):
+        if labels[idx] is not None:
+            s.y = int(labels[idx])
+            labeled_samples.append(s)
+
+    return labeled_samples
+
+
+def save_labeled_samples(samples: List[Sample], split: str = "train") -> None:
+    """
+    Save labeled samples to disk.
+    Uses upsert behavior:
+    - existing (track_id, beat_idx) entries get replaced
+    - new ones are appended
+    """
+    path = _label_file(split)
+
+    existing: dict[str, dict] = {}
+
+    if path.exists():
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                key = _sample_key(rec["track_id"], rec["beat_idx"])
+                existing[key] = rec
+
+    for s in samples:
+        if s.y is None:
+            continue
+
+        rec = {
+            "track_id": s.track_id,
+            "beat_idx": int(s.beat_idx),
+            "y": int(s.y),
+            "source": s.source,
+            "hscore": float(s.hscore),
+        }
+        existing[_sample_key(s.track_id, s.beat_idx)] = rec
+
+    with path.open("w", encoding="utf-8") as f:
+        for rec in existing.values():
+            f.write(json.dumps(rec) + "\n")
+
+
+def load_labeled_samples(split: str = "train") -> List[Sample]:
+    """
+    Load labeled samples from disk and rebuild their x features.
+    """
+    path = _label_file(split)
+    if not path.exists():
+        return []
+
+    samples: List[Sample] = []
+
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            rec = json.loads(line)
+
+            s = make_sample(
+                track_id=rec["track_id"],
+                beat_idx=int(rec["beat_idx"]),
+                source=rec.get("source", ""),
+                hscore=float(rec.get("hscore", 0.0)),
+            )
+            s.y = int(rec["y"])
+            samples.append(s)
+
     return samples

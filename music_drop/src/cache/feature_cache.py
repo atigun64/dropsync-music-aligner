@@ -393,7 +393,7 @@ class AudioFeatureCache:
 
         # If each folder has one song, returning the first file is enough.
         return files[0]
-
+    
     def get_by_id(self, music_id: str):
         """
         Load cached features using the direct parent folder name as ID.

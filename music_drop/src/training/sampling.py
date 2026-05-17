@@ -1,48 +1,30 @@
 from typing import List
 import numpy as np
-from music_drop.src.cache import AudioFeatureCache
 
 from .data import Sample
-from music_core import detect_candidates, score_drops, get_window
+
+from music_drop.src.cache import AudioFeatureCache
+
+from music_core import detect_candidates, score_drops, build_feature_window
 
 
 _cache = AudioFeatureCache()
 
 
-def build_feature_window(payload, beat_idx):
-    E = np.asarray(payload["E"])
-    O = np.asarray(payload["O"])
-    C = np.asarray(payload["C"])
-    B = np.asarray(payload["B"])
+def make_sample(track_id, beat_idx, source, hscore, payload=None):
+    if payload is None:
+        print("track_id:", track_id)
+        payload = _cache.get_by_id(track_id)
+        print("payload is None?", payload is None)
 
-    w = get_window(beat_idx)
-    window_size = w.stop - w.start
-
-    x = np.zeros((window_size, 4), dtype=np.float32)
-
-    src_start = max(0, w.start)
-    src_stop = min(len(E), w.stop)
-
-    if src_start < src_stop:
-        dst_start = src_start - w.start
-        dst_stop = dst_start + (src_stop - src_start)
-
-        x[dst_start:dst_stop, 0] = E[src_start:src_stop]
-        x[dst_start:dst_stop, 1] = O[src_start:src_stop]
-        x[dst_start:dst_stop, 2] = C[src_start:src_stop]
-        x[dst_start:dst_stop, 3] = B[src_start:src_stop]
-
-    return x
-
-
-def make_sample(track_id, payload, beat_idx, source, hscore):
     return Sample(
         track_id=track_id,
         beat_idx=beat_idx,
-        x=build_feature_window(payload, beat_idx),
+        x=build_feature_window(payload["E"], payload["O"], payload["B"], payload["C"], beat_idx),
         source=source,
         hscore=hscore,
     )
+
 
 
 def heuristic_candidates(payload):
@@ -78,24 +60,42 @@ def sample_background_beats(payload, background_per_track, avoid):
     return chosen.tolist()
 
 
-def build_pool(track_ids, heuristic_per_track=10, background_per_track=10):
+HEURISTIC_THRESHOLD = 0.5
+
+def build_pool(track_ids, heuristic_per_track=3, background_per_track=0):
     pool = []
 
     for track_id in track_ids:
         payload = _cache.get_by_id(track_id)
 
-        cand = heuristic_candidates(payload)[:heuristic_per_track]
-        cand_beats = set()
+        if payload is None:
+            print(f"WARNING: no payload for track_id={track_id}, skipping")
+            continue
+
+        cand = [
+            c for c in heuristic_candidates(payload)
+            if c[2] >= HEURISTIC_THRESHOLD
+        ][:heuristic_per_track]
 
         for beat_idx, _, hscore in cand:
-            pool.append(make_sample(track_id, payload, beat_idx, source="heuristic", hscore=hscore))
-            cand_beats.add(beat_idx)
+            pool.append(
+                make_sample(
+                    track_id,
+                    beat_idx,
+                    source="heuristic",
+                    hscore=hscore,
+                    payload=payload,
+                )
+            )
 
-        bg_beats = sample_background_beats(payload, background_per_track, avoid=cand_beats)
-        for beat_idx in bg_beats:
-            pool.append(make_sample(track_id, payload, beat_idx, source="background", hscore=0.0))
+        # optional later:
+        # bg_beats = sample_background_beats(payload, background_per_track, avoid={c[0] for c in cand})
+        # for beat_idx in bg_beats:
+        #     pool.append(make_sample(track_id, beat_idx, source="background", hscore=0.0, payload=payload))
 
     return pool
+
+
 
 
 def select_queries(model, pool: List[Sample], batch_size=20):

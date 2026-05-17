@@ -106,19 +106,14 @@ def score_drops(E, O, C, B):
     C = C[:n]
     B = B[:n]
 
-    Ez = robust_z(E)
-    Oz = robust_z(O)
-    Cz = robust_z(C)
-    Bz = robust_z(B)
-
     score = np.zeros(n, dtype=float)
 
     for i in range(20, n - 10):
         window = np.column_stack([
-            Ez[i - 20 : i + 10 + 1],
-            Oz[i - 20 : i + 10 + 1],
-            Cz[i - 20 : i + 10 + 1],
-            Bz[i - 20 : i + 10 + 1],
+            E[i - 20 : i + 10 + 1],
+            O[i - 20 : i + 10 + 1],
+            C[i - 20 : i + 10 + 1],
+            B[i - 20 : i + 10 + 1],
         ])
         score[i] = rate_window(window)
 

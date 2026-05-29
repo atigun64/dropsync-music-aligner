@@ -1,4 +1,3 @@
-from music_drop.src.training.active_learning import active_learning_loop
 from pathlib import Path
 
 DATASET_ROOT = Path("music_drop", "data")
@@ -14,14 +13,8 @@ def get_track_ids(split="train"):
     
     return sorted(track_ids)
 
-
 if __name__ == "__main__":
-    train_track_ids = get_track_ids(split="train")
-
-    model, labeled_samples = active_learning_loop(
-        train_track_ids=train_track_ids,
-        rounds=10,
-        initial_label_count=50,
-        batch_size=10,
-        split="train",
-    )
+    track_ids = get_track_ids(split="eval")
+    print(f"Track IDs in 'eval' split:")
+    for tid in track_ids:
+        print(tid)

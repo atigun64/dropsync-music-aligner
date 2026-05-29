@@ -1,14 +1,9 @@
-# Define the AI model
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import ExtraTreesClassifier
 
-
-model = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(
-            C=0.05,
-            max_iter=2000,
-            class_weight="balanced"
-        ))
-    ])
+model = ExtraTreesClassifier(
+    n_estimators=500,
+    max_features="sqrt",
+    min_samples_leaf=2,
+    class_weight="balanced",
+    random_state=0
+)

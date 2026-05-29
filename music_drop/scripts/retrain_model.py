@@ -3,7 +3,6 @@ from music_drop.src.training.labeling import load_labeled_samples
 from music_drop.src.training.train import train_model
 
 
-DATASET_ROOT = Path("music_drop", "data", "music_dataset")
 LABEL_SPLIT = "train"
 
 def main():

@@ -78,6 +78,10 @@ ydl_opts = {
     # Saves metadata automatically as .info.json next to the file
     "writeinfojson": True,
 
+    # Skip videos longer than ~5 minutes (300 seconds)
+    # match_filter must return None to accept, or a string reason to reject.
+    "match_filter": lambda info: None if info.get("duration") is None or info["duration"] <= 300 else "Duration longer than 5 minutes",
+
     # Convert to mp3
     "postprocessors": [
         {

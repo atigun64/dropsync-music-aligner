@@ -16,7 +16,7 @@ def _load_model(model_path: str = "drop_model.joblib"):
 
 def _build_ml_vector(E, O, C, F, B, beat_idx: int, hscore: float) -> np.ndarray:
     window = build_feature_window_ml(E, O, C, F, B, beat_idx)
-    return np.concatenate(([float(hscore)], window.reshape(-1)))
+    return window.reshape(-1)
 
 
 def get_ml_candidates(

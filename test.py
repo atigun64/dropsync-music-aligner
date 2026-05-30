@@ -47,7 +47,7 @@ def main():
 
             E, O, C, F, B, _, beat_times, _ = extract_features(str(path))
 
-            cands = get_ml_candidates(E, O, C, F, B, beat_times)
+            cands = get_ml_candidates(E, O, C, F, B, beat_times, heuristic_threshold=0.0)
 
             if not cands:
                 print("No candidates found.")

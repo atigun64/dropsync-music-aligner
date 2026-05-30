@@ -26,14 +26,14 @@ from app.models import (
 
 def _queryspec_to_optimizer(query: QuerySpec) -> O_Query:
     oq = O_Query()
-    oq.set_length(query.length_ticks)
+    oq.set_length(query.length_seconds)
     oq.set_signature(O_TrackSignature(list(query.signature)))
 
     for p in query.requested_points:
         oq.add_annotation(
             O_PointAnnotation(
                 p.label,
-                time=p.time_ticks,
+                time=p.time_seconds,
                 strength=p.strength,
             )
         )
@@ -43,7 +43,7 @@ def _queryspec_to_optimizer(query: QuerySpec) -> O_Query:
 
 def _trackrecord_to_optimizer(record: TrackRecord) -> O_Track:
     ot = O_Track()
-    ot.set_length(record.meta.length_ticks)
+    ot.set_length(record.meta.length_seconds)
     ot.set_BPM(record.meta.bpm)
     ot.set_signature(O_TrackSignature(list(record.meta.signature)))
 
@@ -60,7 +60,7 @@ def _trackrecord_to_optimizer(record: TrackRecord) -> O_Track:
         ot.add_annotation(
             O_PointAnnotation(
                 ann.label,
-                time=ann.time_ticks,
+                time=ann.time_seconds,
                 strength=ann.strength,
             )
         )
@@ -90,7 +90,7 @@ def _alignment_to_app(alignment) -> AlignmentSpec:
             placed_points.append(
                 AnnotationPoint(
                     label=ann.label,
-                    time_ticks=float(ann.time),
+                    time_seconds=float(ann.time),
                     strength=float(getattr(ann, "strength", 1.0)),
                 )
             )
@@ -100,7 +100,7 @@ def _alignment_to_app(alignment) -> AlignmentSpec:
         placed_tracks.append(
             AlignmentTrack(
                 track_id=track_id,
-                start_time_ticks=float(tr.start_time),
+                start_time_seconds=float(tr.start_time),
                 speed=float(tr.speed),
                 placed_points=placed_points,
             )

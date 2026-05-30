@@ -31,6 +31,11 @@ def detect_candidates(E, O, C, B, beat_times, threshold=THRESHOLD, max_candidate
 
     ranked = sorted(selected, key=lambda i: score[i], reverse=True)
 
+    # remove duplicates and out-of-range indices, and keep only top candidates
+    ranked = list(set(ranked))
+    ranked = [i for i in ranked if 0 <= i < len(beat_times)]
+    ranked = sorted(ranked, key=lambda i: score[i], reverse=True)[:max_candidates]
+
     out = []
     for i in ranked:
         if 0 <= i < len(beat_times):

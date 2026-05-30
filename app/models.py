@@ -19,7 +19,7 @@ class AnnotationPoint:
     - aligned / placed points
     """
     label: str
-    time_ticks: float
+    time_seconds: float
     strength: float = 1.0
 
 
@@ -32,7 +32,7 @@ class TrackMeta:
     """
     Metadata / constraints for one track.
     """
-    length_ticks: float
+    length_seconds: float
     bpm: float
     signature: List[float]
     preference: float = 1.0
@@ -60,7 +60,7 @@ class QuerySpec:
     """
     The requested timeline for the studio/compiler.
     """
-    length_ticks: float
+    length_seconds: float
     signature: List[float]
     requested_points: List[AnnotationPoint] = field(default_factory=list)
 
@@ -88,7 +88,7 @@ class AlignmentTrack:
     One track placed by the optimizer into the studio timeline.
     """
     track_id: str
-    start_time_ticks: float
+    start_time_seconds: float
     speed: float = 1.0
     placed_points: List[AnnotationPoint] = field(default_factory=list)
 

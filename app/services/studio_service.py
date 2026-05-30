@@ -89,3 +89,6 @@ class StudioService:
         self.studio_store.save_session(session)
         return alignment
     
+    def delete_studio(self, studio_id: str) -> None:
+        self.studio_store.delete_studio(studio_id)
+

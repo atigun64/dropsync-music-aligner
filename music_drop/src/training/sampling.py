@@ -80,7 +80,7 @@ def pool_filter(pool, labeled_samples):
         Filter out samples from the pool which are near already labeled samples.
         This is to avoid showing the same or very similar samples to the annotator multiple times.
         If a label is positive we filter [-4, +4] beat indices around it.
-        Otherwise we filter [-2, +2] beat indices around it.
+        Otherwise we filter [-5, +5] beat indices around it.
     """
     filtered = []
 
@@ -89,10 +89,10 @@ def pool_filter(pool, labeled_samples):
         for labeled in labeled_samples:
             if sample.track_id == labeled.track_id:
                 dist = abs(sample.beat_idx - labeled.beat_idx)
-                if labeled.y == 1 and dist <= 2:
+                if labeled.y == 1 and dist <= 4:
                     too_close = True
                     break
-                elif labeled.y == 0 and dist <= 4:
+                elif labeled.y == 0 and dist <= 5:
                     too_close = True
                     break
 
@@ -101,12 +101,13 @@ def pool_filter(pool, labeled_samples):
 
     return filtered
 
+
 def select_queries(
     model,
     pool: List[Sample],
     batch_size=20,
-    frac_uncertain=0.4,
-    frac_high_pos=0.3,
+    frac_uncertain=0.6,
+    frac_high_pos=0.4,
     frac_high_neg=0.3,
     heuristic_frac=0.7,
     suppress_radius_uncertain=2,

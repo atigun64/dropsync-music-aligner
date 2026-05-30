@@ -72,7 +72,7 @@ def weighted_geometric_mean(values: list[float], weights: list[float]) -> float:
     Weighted geometric mean in [0,1].
 
     If any value is tiny, the result becomes tiny.
-    That is exactly what you want for "one bad drop ruins it".
+    one bad request should hurt the whole score a lot.
     """
     if not values:
         return 0.5

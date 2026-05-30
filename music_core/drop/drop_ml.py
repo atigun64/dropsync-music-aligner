@@ -6,7 +6,7 @@ import numpy as np
 from joblib import load
 
 from .window import build_feature_window_ml
-from .heuristic_candidates import detect_candidates
+from .drop_heuristic import score_drops
 
 
 @lru_cache(maxsize=4)
@@ -47,17 +47,15 @@ def get_ml_candidates(
     n = min(len(E), len(O), len(C), len(B), len(beat_times))
     E, O, C, B, beat_times = E[:n], O[:n], C[:n], B[:n], beat_times[:n]
 
-    # 1) heuristic candidates
-    heuristic_cands = detect_candidates(E, O, C, B, beat_times, 0.0, 200)
-    cand = [
-        c for c in heuristic_cands
-        if c[2] > heuristic_threshold
-    ]
-
+    # 1) all beats are candidates
+    scores = score_drops(E, O, C, B)
+    cand = []
+    for i, (bt, sc) in enumerate(zip(beat_times, scores)):
+        if sc >= heuristic_threshold:
+            cand.append((i, bt, sc))
+    
     print(len(cand))
 
-    if not cand:
-        return []
     
     # 2) build features for only heuristic candidates
     model = _load_model(model_path)

@@ -1,1 +1,1 @@
-from optimizer.scores.config import DROP_MISS_TOLERANCE, MAX_ACCEPTABLE_OVERLAP
+from optimizer.scores.config import DROP_MISS_TOLERANCE, MAX_ACCEPTABLE_OVERLAP, MAX_ACCEPTABLE_GAP

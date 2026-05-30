@@ -47,7 +47,7 @@ def upload_track_interactive(service: TrackService):
         print("\nUploaded successfully.")
         print(f"Track ID: {record.track_id}")
         print(f"Audio path: {record.audio_path}")
-        print(f"Length ticks: {record.meta.length_ticks}")
+        print(f"Length ticks: {record.meta.length_seconds}")
         print(f"BPM: {record.meta.bpm}")
         print(f"Signature: {record.meta.signature}")
         print(f"Annotations: {len(record.annotations)}")
@@ -67,7 +67,7 @@ def view_track_interactive(service: TrackService):
         print("\nTrack loaded:")
         print(f"Track ID: {record.track_id}")
         print(f"Audio path: {record.audio_path}")
-        print(f"Length ticks: {record.meta.length_ticks}")
+        print(f"Length ticks: {record.meta.length_seconds}")
         print(f"BPM: {record.meta.bpm}")
         print(f"Signature: {record.meta.signature}")
         print(f"Preference: {record.meta.preference}")
@@ -79,7 +79,7 @@ def view_track_interactive(service: TrackService):
         else:
             for i, ann in enumerate(record.annotations, start=1):
                 print(
-                    f"  {i:02d}. {ann.label} | time={ann.time_ticks} | strength={ann.strength}"
+                    f"  {i:02d}. {ann.label} | time={ann.time_seconds} | strength={ann.strength}"
                 )
         print()
     except Exception as e:
@@ -149,12 +149,12 @@ def view_studio_session_interactive(service: StudioService):
             print("\nQuery: (none)")
         else:
             print("\nQuery:")
-            print(f"  Length ticks: {session.query.length_ticks}")
+            print(f"  Length ticks: {session.query.length_seconds}")
             print(f"  Signature: {session.query.signature}")
             print(f"  Requested points: {len(session.query.requested_points)}")
             for i, p in enumerate(session.query.requested_points, start=1):
                 print(
-                    f"    {i:02d}. {p.label} | time={p.time_ticks} | strength={p.strength}"
+                    f"    {i:02d}. {p.label} | time={p.time_seconds} | strength={p.strength}"
                 )
 
         if session.alignment is None:
@@ -165,11 +165,11 @@ def view_studio_session_interactive(service: StudioService):
             print(f"  Tracks: {len(session.alignment.tracks)}")
             for i, tr in enumerate(session.alignment.tracks, start=1):
                 print(
-                    f"    {i:02d}. track_id={tr.track_id} | start={tr.start_time_ticks} | speed={tr.speed} | placed_points={len(tr.placed_points)}"
+                    f"    {i:02d}. track_id={tr.track_id} | start={tr.start_time_seconds} | speed={tr.speed} | placed_points={len(tr.placed_points)}"
                 )
                 for j, p in enumerate(tr.placed_points, start=1):
                     print(
-                        f"       {j:02d}. {p.label} | time={p.time_ticks} | strength={p.strength}"
+                        f"       {j:02d}. {p.label} | time={p.time_seconds} | strength={p.strength}"
                     )
 
         print()
@@ -235,13 +235,13 @@ def create_query_interactive(service: StudioService):
             requested_points.append(
                 AnnotationPoint(
                     label="drop",
-                    time_ticks=float(point_sec),
+                    time_seconds=float(point_sec),
                     strength=strength,
                 )
             )
 
         query = QuerySpec(
-            length_ticks=float(length_sec),
+            length_seconds=float(length_sec),
             signature=signature,
             requested_points=requested_points,
         )
@@ -265,7 +265,7 @@ def run_optimizer_interactive(service: StudioService):
         print(f"Placed tracks: {len(alignment.tracks)}")
         for i, tr in enumerate(alignment.tracks, start=1):
             print(
-                f"  {i:02d}. track_id={tr.track_id} | start_ticks={tr.start_time_ticks} | speed={tr.speed} | placed_points={len(tr.placed_points)}"
+                f"  {i:02d}. track_id={tr.track_id} | start_seconds={tr.start_time_seconds} | speed={tr.speed} | placed_points={len(tr.placed_points)}"
             )
         print()
     except Exception as e:

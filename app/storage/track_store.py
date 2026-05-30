@@ -88,7 +88,7 @@ class TrackStore:
     def _annotation_to_dict(a: AnnotationPoint) -> Dict[str, Any]:
         return {
             "label": a.label,
-            "time_ticks": float(a.time_ticks),
+            "time_seconds": float(a.time_seconds),
             "strength": float(a.strength),
         }
 
@@ -96,14 +96,14 @@ class TrackStore:
     def _annotation_from_dict(d: Dict[str, Any]) -> AnnotationPoint:
         return AnnotationPoint(
             label=str(d["label"]),
-            time_ticks=float(d["time_ticks"]),
+            time_seconds=float(d["time_seconds"]),
             strength=float(d.get("strength", 1.0)),
         )
 
     @staticmethod
     def _meta_to_dict(meta: TrackMeta) -> Dict[str, Any]:
         return {
-            "length_ticks": float(meta.length_ticks),
+            "length_seconds": float(meta.length_seconds),
             "bpm": float(meta.bpm),
             "signature": [float(x) for x in meta.signature],
             "preference": float(meta.preference),
@@ -114,7 +114,7 @@ class TrackStore:
     @staticmethod
     def _meta_from_dict(d: Dict[str, Any]) -> TrackMeta:
         return TrackMeta(
-            length_ticks=float(d["length_ticks"]),
+            length_seconds=float(d["length_seconds"]),
             bpm=float(d["bpm"]),
             signature=[float(x) for x in d["signature"]],
             preference=float(d.get("preference", 1.0)),

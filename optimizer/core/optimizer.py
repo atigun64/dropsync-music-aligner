@@ -4,6 +4,7 @@ import math
 
 from optimizer.models import Query, TrackLibrary, Alignment, AssignedTrack, Track, PointAnnotation
 from optimizer.scores import score_alignment_partial, score_alignment_final
+from optimizer.scores.config import MAX_ACCEPTABLE_GAP
 from .config import DROP_MISS_TOLERANCE, MAX_ACCEPTABLE_OVERLAP
 
 
@@ -11,7 +12,7 @@ from .config import DROP_MISS_TOLERANCE, MAX_ACCEPTABLE_OVERLAP
 class BeamState:
     alignment: Alignment
     score: float
-    covered_end: float = 0.0
+    frontier_end: float = 0.0
     used_track_ids: set[int] = field(default_factory=set)
 
 
@@ -35,7 +36,7 @@ class BeamSearch(Optimizer):
         initial_state = BeamState(
             alignment=initial_alignment,
             score=score_alignment_partial(initial_alignment, query),
-            covered_end=0.0,
+            frontier_end=0.0,
             used_track_ids=set(),
         )
 
@@ -45,6 +46,10 @@ class BeamSearch(Optimizer):
             new_beam: list[BeamState] = []
 
             for state in beam:
+                if state.frontier_end >= query.length - MAX_ACCEPTABLE_GAP * 2:
+                    new_beam.append(state)
+                    continue
+
                 candidates = self._candidate_extensions(state, query, tracks)
 
                 for candidate in candidates:
@@ -93,12 +98,13 @@ class BeamSearch(Optimizer):
 
         # Try requests that are not obviously in the past.
         # We focus on requests at or after the current frontier, with a small overlap window.
-        frontier = state.covered_end
+        frontier = state.frontier_end
         overlap_slack = MAX_ACCEPTABLE_OVERLAP
+        gap_slack = MAX_ACCEPTABLE_GAP
 
         future_targets = [
             r for r in requested_drops
-            if r.time is not None and r.time >= frontier - overlap_slack
+            if r.time is not None and r.time >= frontier - overlap_slack and r.time <= frontier + gap_slack
         ]
 
         # If nothing is found near the frontier, still try the strongest remaining requests.
@@ -114,7 +120,7 @@ class BeamSearch(Optimizer):
                 continue
 
             for track in tracks.get_tracks():
-                track_id = id(track)
+                track_id = track.track_id if track.track_id is not None else id(track)
                 if track_id in state.used_track_ids:
                     continue
 
@@ -148,8 +154,8 @@ class BeamSearch(Optimizer):
                                 continue
 
                             # Keep mostly left-to-right behavior.
-                            # Allow a small overlap, but not huge backtracking.
-                            if start_time < frontier - overlap_slack:
+                            # Allow a small overlap or gap for flexibility, but don't consider candidates that are way off.
+                            if start_time < frontier - overlap_slack or start_time > frontier + gap_slack:
                                 continue
 
                             key = (track_id, round(start_time, 2), round(speed, 3))
@@ -159,10 +165,8 @@ class BeamSearch(Optimizer):
 
                             candidates.append((track, start_time, speed))
 
-        # If anchoring gives too few candidates, add sequential fallback.
-        if len(candidates) < self.beam_width:
-            candidates.extend(self._sequential_candidates(state, query, tracks, seen))
-
+        sequential_candidates = self._sequential_candidates(state, query, tracks, seen)
+        candidates.extend(sequential_candidates)
         return candidates
 
     def _requested_drops(self, query: Query) -> list[PointAnnotation]:
@@ -192,35 +196,17 @@ class BeamSearch(Optimizer):
         if min_speed > max_speed:
             min_speed, max_speed = max_speed, min_speed
 
-        # simple 3-point search
-        mid = (min_speed + max_speed) / 2.0
-
-        speeds = [min_speed, (min_speed + mid) / 2.0 , mid, (max_speed + mid) / 2.0, max_speed]
-
-        # dedupe
-        out: list[float] = []
-        seen: set[float] = set()
-        for s in speeds:
-            if s not in seen:
-                seen.add(s)
-                out.append(s)
-
-        return out
+        # Try 10 speeds between min and max
+        return [min_speed + i * (max_speed - min_speed) / 9 for i in range(10)]
 
     def _anchor_offsets(self) -> list[float]:
         """
         Small offsets around the exact anchor.
-
-        If your times are ticks, these are ticks.
+        This allows some flexibility in matching requests that don't line up perfectly with track drops.
         """
+        
         tol = int(DROP_MISS_TOLERANCE)
-        step = max(1, tol // 3)
-
-        return [
-            -step,
-            0,
-            step,
-        ]
+        return [0.0, -tol, tol, -tol/2, tol/2, -tol/4, tol/4]
 
     def _sequential_candidates(
         self,
@@ -235,11 +221,11 @@ class BeamSearch(Optimizer):
         candidates: list[tuple[Track, float, float]] = []
         seen = seen if seen is not None else set()
 
-        frontier = state.covered_end
+        frontier = state.frontier_end
         query_length = query.length
 
         for track in tracks.get_tracks():
-            track_id = id(track)
+            track_id = track.track_id if track.track_id is not None else id(track)
             if track_id in state.used_track_ids:
                 continue
 
@@ -281,16 +267,16 @@ class BeamSearch(Optimizer):
         new_alignment.tracks.append(assigned)
 
         new_used_ids = set(state.used_track_ids)
-        new_used_ids.add(id(track))
+        new_used_ids.add(track.track_id if track.track_id is not None else id(track))
 
-        new_end = max(state.covered_end, start_time + self._assigned_duration(assigned))
+        new_end = max(state.frontier_end, start_time + self._assigned_duration(assigned))
 
         new_score = score_alignment_partial(new_alignment, query)
 
         return BeamState(
             alignment=new_alignment,
             score=new_score,
-            covered_end=new_end,
+            frontier_end=new_end,
             used_track_ids=new_used_ids,
         )
 

@@ -69,7 +69,7 @@ class StudioStore:
     def _annotation_to_dict(a: AnnotationPoint) -> Dict[str, Any]:
         return {
             "label": a.label,
-            "time_ticks": float(a.time_ticks),
+            "time_seconds": float(a.time_seconds),
             "strength": float(a.strength),
         }
 
@@ -77,14 +77,14 @@ class StudioStore:
     def _annotation_from_dict(d: Dict[str, Any]) -> AnnotationPoint:
         return AnnotationPoint(
             label=str(d["label"]),
-            time_ticks=float(d["time_ticks"]),
+            time_seconds=float(d["time_seconds"]),
             strength=float(d.get("strength", 1.0)),
         )
 
     @staticmethod
     def _query_to_dict(query: QuerySpec) -> Dict[str, Any]:
         return {
-            "length_ticks": float(query.length_ticks),
+            "length_seconds": float(query.length_seconds),
             "signature": [float(x) for x in query.signature],
             "requested_points": [StudioStore._annotation_to_dict(p) for p in query.requested_points],
         }
@@ -92,11 +92,11 @@ class StudioStore:
     @staticmethod
     def _query_from_dict(d: Dict[str, Any]) -> QuerySpec:
         return QuerySpec(
-            length_ticks=float(d["length_ticks"]),
+            length_seconds=float(d["length_seconds"]),
             signature=[float(x) for x in d["signature"]],
             requested_points=[StudioStore._annotation_from_dict(p) for p in d.get("requested_points", [])],
         )
-
+    
     @staticmethod
     def _alignment_to_dict(al: AlignmentSpec) -> Dict[str, Any]:
         return {
@@ -104,7 +104,7 @@ class StudioStore:
             "tracks": [
                 {
                     "track_id": t.track_id,
-                    "start_time_ticks": float(t.start_time_ticks),
+                    "start_time_seconds": float(t.start_time_seconds),
                     "speed": float(t.speed),
                     "placed_points": [StudioStore._annotation_to_dict(p) for p in t.placed_points],
                 }
@@ -119,7 +119,7 @@ class StudioStore:
             tracks.append(
                 AlignmentTrack(
                     track_id=str(t["track_id"]),
-                    start_time_ticks=float(t["start_time_ticks"]),
+                    start_time_seconds=float(t["start_time_seconds"]),
                     speed=float(t.get("speed", 1.0)),
                     placed_points=[StudioStore._annotation_from_dict(p) for p in t.get("placed_points", [])],
                 )

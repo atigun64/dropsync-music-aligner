@@ -3,7 +3,6 @@ from typing import List
 class Annotation:
     def __init__(self, label):
         self.label = label
-        self.score = None
 
 class PointAnnotation(Annotation):
     def __init__(self, label, time=None, strength=1.0):

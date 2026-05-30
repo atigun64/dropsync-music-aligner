@@ -15,14 +15,14 @@ DATASET_ROOT = Path("music_drop", "data")
 LABEL_SPLIT = "train"
 
 # Candidate score range
-MODEL_THRESHOLD = (0.6, 1.0)
+MODEL_THRESHOLD = (0.7, 1.0)
 
 # Compilation settings
 OUTPUT_DIR = Path("music_drop", "data", "compilations")
 OUTPUT_BASENAME = "edm_explosion_points"
 
 # Bigger windows than before
-PRE_BEATS = 6
+PRE_BEATS = 7
 POST_BEATS = 10
 
 # Small fades, not huge
@@ -40,7 +40,7 @@ MAX_PER_TRACK = 5
 AVOID_ADJACENT_SAME_TRACK = True
 
 # Max clips in final compilation (for sanity)
-MAX_COMPILED_CLIPS = 50
+MAX_COMPILED_CLIPS = 1000
 
 
 def get_track_ids(split="train"):

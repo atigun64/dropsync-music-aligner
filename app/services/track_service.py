@@ -26,10 +26,10 @@ class TrackService:
         E, O, C, F, B, bpm, beat_times, frame_times = feats
 
         length_sec = float(frame_times[-1]) if len(frame_times) > 0 else 0.0
-        length_ticks = length_sec
+        length_seconds = length_sec
 
         meta = TrackMeta(
-            length_ticks=length_ticks,
+            length_seconds=length_seconds,
             bpm=float(bpm),
             signature=[0.6, 0.4, 0.8, 0.3],  # TODO compute real signature
             preference=1.0,
@@ -44,7 +44,7 @@ class TrackService:
             annotations.append(
                 AnnotationPoint(
                     label="drop",
-                    time_ticks=float(beat_time_sec),
+                    time_seconds=float(beat_time_sec),
                     strength=float(score),
                 )
             )

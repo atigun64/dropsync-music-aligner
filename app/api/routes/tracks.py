@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import mimetypes
 import re
 import shutil
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 
 from app.api.deps import get_track_service
 from app.models import AnnotationPoint, TrackMeta
@@ -124,6 +126,35 @@ def delete_track(track_id: str, service: TrackService = Depends(get_track_servic
     try:
         service.delete_track(track_id)
         return {"message": f"Track {track_id} deleted successfully"}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Track not found: {track_id}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{track_id}/audio")
+def get_track_audio(track_id: str, service: TrackService = Depends(get_track_service)):
+    try:
+        track = service.load_track(track_id)
+
+        audio_path = Path(track.audio_path)
+
+        mime_type, _ = mimetypes.guess_type(str(audio_path))
+
+        return FileResponse(
+            path=str(audio_path),
+            media_type=mime_type or "application/octet-stream",
+            filename=audio_path.name,
+        )
+
+        if not audio_path.exists():
+            raise HTTPException(status_code=404, detail="Audio file not found")
+
+        return FileResponse(
+            path=str(audio_path),
+            media_type="audio/mpeg",
+            filename=audio_path.name,
+        )
+
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Track not found: {track_id}")
     except Exception as e:

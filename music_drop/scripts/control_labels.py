@@ -9,7 +9,7 @@ from music_drop.src.cache import AudioFeatureCache
 from music_core import window_times
 
 
-DATASET_ROOT = Path("music_drop", "data", "music_dataset")
+DATASET_ROOT = Path("music_drop", "data")
 LABEL_SPLIT = "train"
 MODEL_THRESHOLD = (0.6, 1.0)
 

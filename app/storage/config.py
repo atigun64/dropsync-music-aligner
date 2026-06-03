@@ -8,4 +8,5 @@ TRACKS_ROOT = DATA_DIR / "track_library"
 STUDIOS_ROOT = DATA_DIR / "studios"
 AUDIO_UPLOADS_DIR = DATA_DIR / "audio_uploads"
 
+# Ensure upload directory exists
 AUDIO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)

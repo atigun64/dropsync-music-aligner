@@ -9,11 +9,11 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, s
 
 from app.api.deps import get_track_service
 from app.models import AnnotationPoint, TrackMeta
-from app.serializers import (
-    TrackRecordSerializer,
-    TrackListItemSerializer,
-    TrackMetaCreateSerializer,
-    AnnotationPointCreateSerializer,
+from app.schemas import (
+    TrackRecordSchema,
+    TrackListItemSchema,
+    TrackMetaCreateSchema,
+    AnnotationPointCreateSchema,
 )
 from app.services.track_service import TrackService
 from app.storage.config import AUDIO_UPLOADS_DIR
@@ -38,27 +38,27 @@ def _save_uploaded_file_permanently(file: UploadFile) -> Path:
     return final_path
 
 
-@router.get("", response_model=list[TrackListItemSerializer])
+@router.get("", response_model=list[TrackListItemSchema])
 def list_tracks(service: TrackService = Depends(get_track_service)):
     try:
         tracks = service.list_tracks()
-        return [TrackListItemSerializer.model_validate(t) for t in tracks]
+        return [TrackListItemSchema.model_validate(t) for t in tracks]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/{track_id}", response_model=TrackRecordSerializer)
+@router.get("/{track_id}", response_model=TrackRecordSchema)
 def get_track(track_id: str, service: TrackService = Depends(get_track_service)):
     try:
         track = service.load_track(track_id)
-        return TrackRecordSerializer.model_validate(track)
+        return TrackRecordSchema.model_validate(track)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Track not found: {track_id}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/upload", response_model=TrackRecordSerializer)
+@router.post("/upload", response_model=TrackRecordSchema)
 async def upload_track(
     file: UploadFile = File(...),
     service: TrackService = Depends(get_track_service),
@@ -66,15 +66,15 @@ async def upload_track(
     try:
         permanent_path = _save_uploaded_file_permanently(file)
         track_record = service.upload_track(permanent_path)
-        return TrackRecordSerializer.model_validate(track_record)
+        return TrackRecordSchema.model_validate(track_record)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to upload track: {str(e)}")
 
 
-@router.put("/{track_id}/annotations", response_model=TrackRecordSerializer)
+@router.put("/{track_id}/annotations", response_model=TrackRecordSchema)
 def update_track_annotations(
     track_id: str,
-    annotations: list[AnnotationPointCreateSerializer] = Body(...),
+    annotations: list[AnnotationPointCreateSchema] = Body(...),
     service: TrackService = Depends(get_track_service),
 ):
     try:
@@ -88,17 +88,17 @@ def update_track_annotations(
         ]
         service.edit_track_annotations(track_id, annotation_points)
         track = service.load_track(track_id)
-        return TrackRecordSerializer.model_validate(track)
+        return TrackRecordSchema.model_validate(track)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Track not found: {track_id}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.put("/{track_id}/metadata", response_model=TrackRecordSerializer)
+@router.put("/{track_id}/metadata", response_model=TrackRecordSchema)
 def update_track_metadata(
     track_id: str,
-    meta: TrackMetaCreateSerializer = Body(...),
+    meta: TrackMetaCreateSchema = Body(...),
     service: TrackService = Depends(get_track_service),
 ):
     try:
@@ -112,7 +112,7 @@ def update_track_metadata(
         )
         service.edit_track_meta(track_id, track_meta)
         track = service.load_track(track_id)
-        return TrackRecordSerializer.model_validate(track)
+        return TrackRecordSchema.model_validate(track)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Track not found: {track_id}")
     except Exception as e:

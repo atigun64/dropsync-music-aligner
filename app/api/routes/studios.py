@@ -10,22 +10,22 @@ from app.models import (
     QuerySpec,
     StudioMeta,
 )
-from app.serializers import (
-    StudioSessionSerializer,
-    QuerySpecCreateSerializer,
-    QuerySpecSerializer,
-    AlignmentSpecSerializer,
-    StudioMetaCreateSerializer,
-    StudioMetaSerializer,
-    AlignmentTrackSerializer,
-    AnnotationPointCreateSerializer,
+from app.schemas import (
+    StudioSessionSchema,
+    QuerySpecCreateSchema,
+    QuerySpecSchema,
+    AlignmentSpecSchema,
+    StudioMetaCreateSchema,
+    StudioMetaSchema,
+    AlignmentTrackSchema,
+    AnnotationPointCreateSchema,
 )
 from app.services.studio_service import StudioService
 
 router = APIRouter(prefix="/api/studios", tags=["studios"])
 
 
-def _annotation_create_to_model(a: AnnotationPointCreateSerializer) -> AnnotationPoint:
+def _annotation_create_to_model(a: AnnotationPointCreateSchema) -> AnnotationPoint:
     return AnnotationPoint(
         label=a.label,
         time_seconds=a.time_seconds,
@@ -33,7 +33,7 @@ def _annotation_create_to_model(a: AnnotationPointCreateSerializer) -> Annotatio
     )
 
 
-def _query_create_to_model(q: QuerySpecCreateSerializer) -> QuerySpec:
+def _query_create_to_model(q: QuerySpecCreateSchema) -> QuerySpec:
     return QuerySpec(
         length_seconds=q.length_seconds,
         signature=q.signature,
@@ -41,7 +41,7 @@ def _query_create_to_model(q: QuerySpecCreateSerializer) -> QuerySpec:
     )
 
 
-def _alignment_to_model(al: AlignmentSpecSerializer) -> AlignmentSpec:
+def _alignment_to_model(al: AlignmentSpecSchema) -> AlignmentSpec:
     return AlignmentSpec(
         score=al.score,
         tracks=[
@@ -79,38 +79,38 @@ def create_studio(service: StudioService = Depends(get_studio_service)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{studio_id}", response_model=StudioSessionSerializer)
+@router.get("/{studio_id}", response_model=StudioSessionSchema)
 def get_studio_session(
     studio_id: str,
     service: StudioService = Depends(get_studio_service),
 ):
     try:
         session = service.get_studio_session(studio_id)
-        return StudioSessionSerializer.model_validate(session)
+        return StudioSessionSchema.model_validate(session)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Studio not found: {studio_id}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{studio_id}/metadata", response_model=StudioMetaSerializer)
+@router.get("/{studio_id}/metadata", response_model=StudioMetaSchema)
 def get_studio_metadata(
     studio_id: str,
     service: StudioService = Depends(get_studio_service),
 ):
     try:
         session = service.get_studio_session(studio_id)
-        return StudioMetaSerializer.model_validate(session.meta)
+        return StudioMetaSchema.model_validate(session.meta)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Studio not found: {studio_id}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.put("/{studio_id}/metadata", response_model=StudioSessionSerializer)
+@router.put("/{studio_id}/metadata", response_model=StudioSessionSchema)
 def update_studio_metadata(
     studio_id: str,
-    meta: StudioMetaCreateSerializer = Body(...),
+    meta: StudioMetaCreateSchema = Body(...),
     service: StudioService = Depends(get_studio_service),
 ):
     try:
@@ -121,21 +121,21 @@ def update_studio_metadata(
             notes=meta.notes,
         )
         service.save_studio_session(session)
-        return StudioSessionSerializer.model_validate(session)
+        return StudioSessionSchema.model_validate(session)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Studio not found: {studio_id}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{studio_id}/query", response_model=QuerySpecSerializer)
+@router.get("/{studio_id}/query", response_model=QuerySpecSchema)
 def get_studio_query(
     studio_id: str,
     service: StudioService = Depends(get_studio_service),
 ):
     try:
         query = service.load_query(studio_id)
-        return QuerySpecSerializer.model_validate(query)
+        return QuerySpecSchema.model_validate(query)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Studio or query not found: {studio_id}")
     except ValueError as e:
@@ -144,31 +144,31 @@ def get_studio_query(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.put("/{studio_id}/query", response_model=StudioSessionSerializer)
+@router.put("/{studio_id}/query", response_model=StudioSessionSchema)
 def update_studio_query(
     studio_id: str,
-    query_data: QuerySpecCreateSerializer = Body(...),
+    query_data: QuerySpecCreateSchema = Body(...),
     service: StudioService = Depends(get_studio_service),
 ):
     try:
         query = _query_create_to_model(query_data)
         service.save_query(studio_id, query)
         session = service.get_studio_session(studio_id)
-        return StudioSessionSerializer.model_validate(session)
+        return StudioSessionSchema.model_validate(session)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Studio not found: {studio_id}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{studio_id}/alignment", response_model=AlignmentSpecSerializer)
+@router.get("/{studio_id}/alignment", response_model=AlignmentSpecSchema)
 def get_studio_alignment(
     studio_id: str,
     service: StudioService = Depends(get_studio_service),
 ):
     try:
         alignment = service.load_alignment(studio_id)
-        return AlignmentSpecSerializer.model_validate(alignment)
+        return AlignmentSpecSchema.model_validate(alignment)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Studio or alignment not found: {studio_id}")
     except ValueError as e:
@@ -177,31 +177,31 @@ def get_studio_alignment(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.put("/{studio_id}/alignment", response_model=StudioSessionSerializer)
+@router.put("/{studio_id}/alignment", response_model=StudioSessionSchema)
 def update_studio_alignment(
     studio_id: str,
-    alignment_data: AlignmentSpecSerializer = Body(...),
+    alignment_data: AlignmentSpecSchema = Body(...),
     service: StudioService = Depends(get_studio_service),
 ):
     try:
         alignment = _alignment_to_model(alignment_data)
         service.save_alignment(studio_id, alignment)
         session = service.get_studio_session(studio_id)
-        return StudioSessionSerializer.model_validate(session)
+        return StudioSessionSchema.model_validate(session)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Studio not found: {studio_id}")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{studio_id}/run-optimizer", response_model=AlignmentSpecSerializer)
+@router.post("/{studio_id}/run-optimizer", response_model=AlignmentSpecSchema)
 def run_optimizer(
     studio_id: str,
     service: StudioService = Depends(get_studio_service),
 ):
     try:
         alignment = service.run_optimizer(studio_id)
-        return AlignmentSpecSerializer.model_validate(alignment)
+        return AlignmentSpecSchema.model_validate(alignment)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Studio not found: {studio_id}")
     except ValueError as e:

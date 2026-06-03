@@ -169,7 +169,7 @@ def view_studio_session_interactive(service: StudioService):
                 )
                 for j, p in enumerate(tr.placed_points, start=1):
                     print(
-                        f"       {j:02d}. {p.label} | time={p.time_seconds} | strength={p.strength}"
+                        f"        {j:02d}. {p.label} | time={tr.start_time_seconds + p.time_seconds / tr.speed} | strength={p.strength}"
                     )
 
         print()

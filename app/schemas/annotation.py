@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 
-class AnnotationPointSerializer(BaseModel):
+class AnnotationPointSchema(BaseModel):
     label: str
     time_seconds: float
     strength: float = 1.0
@@ -11,7 +11,7 @@ class AnnotationPointSerializer(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AnnotationPointCreateSerializer(BaseModel):
+class AnnotationPointCreateSchema(BaseModel):
     label: str
     time_seconds: float
     strength: float = 1.0

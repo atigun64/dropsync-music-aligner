@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import List
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.serializers.annotation import (
-    AnnotationPointSerializer,
-    AnnotationPointCreateSerializer,
+from app.schemas.annotation import (
+    AnnotationPointSchema,
+    AnnotationPointCreateSchema,
 )
 
 
-class TrackMetaSerializer(BaseModel):
+class TrackMetaSchema(BaseModel):
     length_seconds: float
     bpm: float
     signature: List[float]
@@ -20,7 +20,7 @@ class TrackMetaSerializer(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class TrackMetaCreateSerializer(BaseModel):
+class TrackMetaCreateSchema(BaseModel):
     length_seconds: float
     bpm: float
     signature: List[float]
@@ -31,16 +31,16 @@ class TrackMetaCreateSerializer(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class TrackRecordSerializer(BaseModel):
+class TrackRecordSchema(BaseModel):
     track_id: str
     audio_path: str
-    meta: TrackMetaSerializer
-    annotations: List[AnnotationPointSerializer] = Field(default_factory=list)
+    meta: TrackMetaSchema
+    annotations: List[AnnotationPointSchema] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class TrackListItemSerializer(BaseModel):
+class TrackListItemSchema(BaseModel):
     track_id: str
     display_name: str = ""
     audio_path: str

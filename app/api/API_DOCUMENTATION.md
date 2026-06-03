@@ -432,10 +432,10 @@ print(alignment.json())
 
 ## API Structure
 
-- **Serializers** (`app/serializers/`): Pydantic models for request/response validation
-  - `annotation.py`: AnnotationPoint serializers
-  - `track.py`: Track-related serializers
-  - `studio.py`: Studio, query, and alignment serializers
+- **Schemas** (`app/schemas/`): Pydantic models for request/response validation
+  - `annotation.py`: AnnotationPoint schemas
+  - `track.py`: Track-related schemas
+  - `studio.py`: Studio, query, and alignment schemas
 
 - **Routes** (`app/api/routes/`): API endpoint handlers
   - `track_routes.py`: Track management endpoints

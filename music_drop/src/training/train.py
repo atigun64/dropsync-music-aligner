@@ -57,7 +57,7 @@ def filter_training_samples(samples: List[Sample]) -> List[Sample]:
             
     return filtered_samples
 
-def train_model(labeled_samples: List[Sample]) -> Pipeline:
+def train_model(labeled_samples: List[Sample], ml_model = None) -> Pipeline:
     train_samples = filter_training_samples(labeled_samples)
 
     X = np.stack([
@@ -66,6 +66,8 @@ def train_model(labeled_samples: List[Sample]) -> Pipeline:
     ])
     y = np.array([s.y for s in train_samples], dtype=int)
 
-    model.fit(X, y)
-    dump(model, "drop_model.joblib")
-    return model
+    if ml_model is None:
+        ml_model = model()
+    ml_model.fit(X, y)
+    dump(ml_model, "drop_model.joblib")
+    return ml_model

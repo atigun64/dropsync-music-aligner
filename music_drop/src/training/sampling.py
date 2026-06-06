@@ -14,9 +14,9 @@ _cache = AudioFeatureCache()
 
 def make_sample(track_id, beat_idx, source, hscore, mscore=0.0, payload=None):
     if payload is None:
-        print("track_id:", track_id)
         payload = _cache.get_by_id(track_id)
-        print("payload is None?", payload is None)
+        if payload is None:
+            raise ValueError(f"No payload for track_id={track_id}")
 
     return Sample(
         track_id=track_id,

@@ -27,7 +27,7 @@ def get_ml_candidates(
     B,
     beat_times,
     model_path: str = "drop_model.joblib",
-    heuristic_threshold: float = 0.5,
+    heuristic_threshold: float = 0.1,
     min_score: float = 0.6,
     min_gap_sec: float = 30.0,
     max_candidates: int = 10,
@@ -54,7 +54,7 @@ def get_ml_candidates(
         if sc >= heuristic_threshold:
             cand.append((i, bt, sc))
     
-    print(len(cand))
+    # print(len(cand))
 
     
     # 2) build features for only heuristic candidates
@@ -102,5 +102,5 @@ def get_ml_candidates(
 
         selected.append((beat_idx, beat_time, mscore, hscore))
 
-    print(len(selected))
+    # print(len(selected))
     return [(i, bt, ms) for i, bt, ms, _ in selected]

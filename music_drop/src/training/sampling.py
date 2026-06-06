@@ -101,152 +101,137 @@ def pool_filter(pool, labeled_samples):
 
     return filtered
 
+from typing import List
+from collections import defaultdict
+import numpy as np
+
+def _allocate_quotas(weights, total):
+    weights = np.asarray(weights, dtype=float)
+    raw = weights / weights.sum() * total
+    q = np.floor(raw).astype(int)
+    remainder = total - q.sum()
+
+    # distribute remainder by largest fractional parts
+    frac_order = np.argsort(raw - q)[::-1]
+    for i in frac_order[:remainder]:
+        q[i] += 1
+    return q.tolist()
+
 
 def select_queries(
     model,
     pool: List[Sample],
     batch_size=20,
-    frac_uncertain=0.6,
-    frac_high_pos=0.4,
-    frac_high_neg=0.3,
-    heuristic_frac=0.7,
-    suppress_radius_uncertain=2,
-    suppress_radius_high_pos=2,
-    suppress_radius_high_neg=3,
-    max_per_track=3,
+    seed=None,
+    per_track_radius=2,
+    max_per_track=2,
 ):
+    """
+    Stratified active learning selection:
+    - samples from the whole probability range
+    - does NOT over-focus only on 0.5 / highest / lowest
+    - uses mild per-track suppression to avoid duplicate neighborhoods
+    """
     if len(pool) == 0:
         return []
 
-    # sklearn-style tabular input
+    rng = np.random.default_rng(seed)
+
     X = np.stack([sample_to_vector(s) for s in pool])
     p = model.predict_proba(X)[:, 1]
 
     for s, ms in zip(pool, p):
         s.mscore = float(ms)
 
-    confidence = np.abs(p - 0.5) * 2.0
-    uncertainty = 1.0 - confidence
+    # Probability bins with symmetric coverage.
+    # Weights are the "attention" each bin gets.
+    bins = [
+        (0.00, 0.15, 1.0),
+        (0.15, 0.30, 2.0),
+        (0.30, 0.45, 3.0),
+        (0.45, 0.55, 5.0),
+        (0.55, 0.70, 3.0),
+        (0.70, 0.85, 2.0),
+        (0.85, 1.01, 1.0),
+    ]
+
+    weights = [w for _, _, w in bins]
+    quotas = _allocate_quotas(weights, batch_size)
 
     idx_all = np.arange(len(pool), dtype=int)
-    heuristic_idx = np.array([i for i, s in enumerate(pool) if s.source == "heuristic"], dtype=int)
-
-    def rank_indices(indices, mode):
-        indices = np.asarray(indices, dtype=int)
-        if len(indices) == 0:
-            return []
-
-        if mode == "uncertain":
-            order = np.argsort(-uncertainty[indices])
-        elif mode == "high_pos":
-            order = np.argsort(-p[indices])
-        elif mode == "high_neg":
-            order = np.argsort(p[indices])
-        else:
-            raise ValueError(f"Unknown mode: {mode}")
-
-        return indices[order].tolist()
-
-    def suppress_remaining(available_set, chosen_sample, radius):
-        """
-        Remove samples from the same track within ±radius beats.
-        """
-        for j in list(available_set):
-            s = pool[j]
-            if s.track_id == chosen_sample.track_id:
-                if abs(s.beat_idx - chosen_sample.beat_idx) <= radius:
-                    available_set.discard(j)
-
-    def select_bucket(k, mode, radius):
-        """
-        Greedy selection with neighborhood suppression.
-        """
-        if k <= 0:
-            return []
-
-        # Prefer heuristic items first, then fill from everything
-        k_h = min(len(heuristic_idx), int(round(k * heuristic_frac)))
-        ranked_heur = rank_indices(heuristic_idx, mode)
-        ranked_all = rank_indices(idx_all, mode)
-
-        # Build a combined ranked list without duplicates
-        ranked = []
-        seen = set()
-
-        for i in ranked_heur + ranked_all:
-            if i not in seen:
-                ranked.append(i)
-                seen.add(i)
-
-        available = set(ranked)
-        chosen = []
-        per_track_counts = {}
-
-        for i in ranked:
-            if len(chosen) >= k:
-                break
-            if i not in available:
-                continue
-
-            s = pool[i]
-            cnt = per_track_counts.get(s.track_id, 0)
-            if cnt >= max_per_track:
-                continue
-
-            chosen.append(i)
-            per_track_counts[s.track_id] = cnt + 1
-
-            # suppress neighborhood around this chosen point
-            suppress_remaining(available, s, radius)
-
-            # also remove the chosen one itself
-            available.discard(i)
-
-        return chosen
-
-    k_u = int(round(batch_size * frac_uncertain))
-    k_hp = int(round(batch_size * frac_high_pos))
-    k_hn = batch_size - k_u - k_hp
 
     chosen = []
     chosen_set = set()
+    per_track_counts = defaultdict(int)
 
-    def add_bucket(bucket_indices):
-        for i in bucket_indices:
-            if i not in chosen_set and len(chosen) < batch_size:
-                chosen.append(i)
-                chosen_set.add(i)
+    def accept(i):
+        """Check per-track constraints and radius suppression."""
+        if i in chosen_set:
+            return False
 
-    add_bucket(select_bucket(k_u, "uncertain", suppress_radius_uncertain))
-    add_bucket(select_bucket(k_hp, "high_pos", suppress_radius_high_pos))
-    add_bucket(select_bucket(k_hn, "high_neg", suppress_radius_high_neg))
+        s = pool[i]
 
-    # Final fill if we still have room
+        if per_track_counts[s.track_id] >= max_per_track:
+            return False
+
+        for j in chosen:
+            sj = pool[j]
+            if sj.track_id == s.track_id and abs(sj.beat_idx - s.beat_idx) <= per_track_radius:
+                return False
+
+        chosen.append(i)
+        chosen_set.add(i)
+        per_track_counts[s.track_id] += 1
+        return True
+
+    # 1) Sample each probability bin
+    for (lo, hi, _w), q in zip(bins, quotas):
+        if q <= 0:
+            continue
+
+        idx = idx_all[(p >= lo) & (p < hi)]
+        if len(idx) == 0:
+            continue
+
+        # Representative examples around the bin center,
+        # but not always the exact same one.
+        center = (lo + hi) / 2.0
+        closeness = np.abs(p[idx] - center)
+        order = np.argsort(closeness)
+
+        # Take a top pool from the bin, then shuffle it to avoid determinism.
+        top_pool_size = min(len(idx), max(q * 4, q + 4))
+        top_pool = idx[order[:top_pool_size]].copy()
+        rng.shuffle(top_pool)
+
+        taken = 0
+        for i in top_pool:
+            if accept(int(i)):
+                taken += 1
+                if taken >= q:
+                    break
+
+        # If bin quota wasn't filled, try the rest of the bin
+        if taken < q:
+            rest = idx[order[top_pool_size:]].copy()
+            rng.shuffle(rest)
+            for i in rest:
+                if accept(int(i)):
+                    taken += 1
+                    if taken >= q:
+                        break
+
+    # 2) Final fill from the remaining pool, randomized
     if len(chosen) < batch_size:
         remaining = [i for i in idx_all if i not in chosen_set]
+        rng.shuffle(remaining)
 
-        # Diversity-aware fill: prefer things not too close to already chosen points
-        def diversity_score(i):
-            s = pool[i]
-            # Penalize same-track closeness to chosen items
-            penalty = 0.0
-            for j in chosen:
-                sj = pool[j]
-                if sj.track_id == s.track_id:
-                    d = abs(sj.beat_idx - s.beat_idx)
-                    if d < 10:
-                        penalty += (10 - d)
-            # Prefer uncertainty/extremes
-            return max(uncertainty[i], confidence[i]) - 0.05 * penalty
-
-        remaining = sorted(remaining, key=diversity_score, reverse=True)
         for i in remaining:
             if len(chosen) >= batch_size:
                 break
-            s = pool[i]
-            cnt = sum(1 for j in chosen if pool[j].track_id == s.track_id)
-            if cnt < max_per_track:
-                chosen.append(i)
-                chosen_set.add(i)
+            accept(int(i))
+
+    # Optional: keep output order randomized, not score-sorted.
+    rng.shuffle(chosen)
 
     return [pool[i] for i in chosen[:batch_size]]

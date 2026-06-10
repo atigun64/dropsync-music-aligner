@@ -133,6 +133,7 @@ def load_labeled_samples(split: str = "train") -> List[Sample]:
 
     with path.open("r", encoding="utf-8") as f:
         for line in f:
+            print(f"Loading labeled sample: {line.strip()}")
             line = line.strip()
             if not line:
                 continue
@@ -149,4 +150,5 @@ def load_labeled_samples(split: str = "train") -> List[Sample]:
             s.y = int(rec["y"])
             samples.append(s)
 
+    print(f"Loaded {len(samples)} labeled samples from {path}")
     return samples

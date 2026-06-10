@@ -60,7 +60,7 @@ def F1_score(track_ids, real_drops_seconds, tolerance_beats=7, ml_drop_params=No
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
     return precision, recall, f1
 
-def evaluate_drop_level(ml_drop_params = None):
+def evaluate_drop_level(ml_drop_params = None, tolerance_beats=7):
   data = {}
 
   with open("music_drop/data/drop_points.txt", "r", encoding="utf-8") as f:
@@ -80,6 +80,6 @@ def evaluate_drop_level(ml_drop_params = None):
   track_ids = list(data.keys())
   real_drops_seconds = {track_id: data[track_id] for track_id in track_ids}
 
-  precision, recall, f1 = F1_score(track_ids, real_drops_seconds, ml_drop_params=ml_drop_params)
+  precision, recall, f1 = F1_score(track_ids, real_drops_seconds, tolerance_beats=tolerance_beats, ml_drop_params=ml_drop_params)
   print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1 Score: {f1:.4f}")
   return precision, recall, f1

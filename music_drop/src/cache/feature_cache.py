@@ -100,31 +100,24 @@ def _make_payload(E, O, C, F, B, bpm, beat_times, frame_times) -> FeaturePayload
 
 def load_cache_if_valid(audio_path: Path, cache_path: Path):
     """
-    Load a cached feature file if it exists and still matches the source audio file.
+    Load a cached feature file if it exists.
 
-    Cache validity is checked using the source file modification time stored
-    in the cache. If the source file has changed since the cache was written,
-    the cache is treated as invalid.
+    The cache filename is derived from the audio path relative to the dataset
+    root, so if the cache exists for that audio path it is reused without
+    requiring exact modification time matching.
 
     Args:
         audio_path: Path to the original audio file.
         cache_path: Path to the cache file.
 
     Returns:
-        A feature payload dict if the cache is valid, otherwise None.
+        A feature payload dict if the cache file can be loaded, otherwise None.
     """
     if not cache_path.exists():
         return None
 
     try:
         data = np.load(cache_path, allow_pickle=False)
-        cached_mtime = float(data["source_mtime"])
-        current_mtime = audio_path.stat().st_mtime
-
-        # Reject cache if source file modification time changed.
-        if abs(cached_mtime - current_mtime) > 1e-6:
-            return None
-
         return {
             "E": data["E"],
             "O": data["O"],
@@ -171,6 +164,7 @@ def save_cache(
         cache_path,
         source_path=str(source_path),
         source_mtime=np.float64(source_path.stat().st_mtime),
+        source_size=np.int64(source_path.stat().st_size),
         E=np.asarray(E, dtype=np.float32),
         O=np.asarray(O, dtype=np.float32),
         C=np.asarray(C, dtype=np.float32),
@@ -398,16 +392,26 @@ class AudioFeatureCache:
         """
         Load cached features using the direct parent folder name as ID.
 
+        If the cache is missing or stale, the audio is re-extracted and cached.
+
         Args:
             music_id: Folder name used as the music ID.
 
         Returns:
-            Feature payload if valid cache exists, otherwise None.
+            Feature payload if the track exists, otherwise None.
         """
         audio_path = self.audio_path_from_id(music_id)
         if audio_path is None:
             return None
-        return self.get(audio_path)
+
+        payload = self.get(audio_path)
+        if payload is not None:
+            return payload
+
+        try:
+            return self.get_or_extract(audio_path)
+        except Exception:
+            return None
 
     def get_or_extract_by_id(self, music_id: str):
         """

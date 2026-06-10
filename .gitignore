@@ -1,4 +1,5 @@
 .env
 data
 /music_drop/data
+/music_drop/data backup
 drop_model.joblib

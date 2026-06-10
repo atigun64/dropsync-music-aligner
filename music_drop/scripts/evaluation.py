@@ -17,6 +17,7 @@ def main():
 
     model = ExtraTreesClassifier(
         n_estimators=500,
+        # max_depth=20,
         max_features="sqrt",
         min_samples_leaf=2,
         class_weight="balanced",
@@ -25,7 +26,7 @@ def main():
     train_model(labeled_samples=labeled_samples, ml_model=model)
 
     ml_drop_params = {
-        "min_score": 0.6,
+        "min_score": 0.60,
         "heuristic_threshold": 0.1,
         "min_gap_sec": 10,
     }

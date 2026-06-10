@@ -54,3 +54,4 @@ export function runOptimizer(studioId) {
 export function deleteStudio(studioId) {
   return apiDelete(`/api/studios/${studioId}`);
 }
+  

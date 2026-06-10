@@ -11,12 +11,15 @@ def active_learning_loop(
     initial_label_count=50,
     batch_size=20,
     split="train",
+    call_scores=callable(lambda: None)
 ):
     # Load previously saved labeled samples
     labeled_samples = load_labeled_samples(split=split)
+    print(f"Loaded {len(labeled_samples)} labeled samples from split='{split}'.")
 
     # Build current unlabeled pool and filter out already labeled samples
     unlabeled_pool = pool_filter(build_pool(train_track_ids), labeled_samples)
+    print(f"Built unlabeled pool with {len(unlabeled_pool)} samples after filtering labeled ones.")
 
     print(f"Initial unlabeled pool size: {len(unlabeled_pool)}")
 
@@ -43,6 +46,9 @@ def active_learning_loop(
 
     model = None
 
+    call_scores()
+    print(f"Starting active learning loop with {len(labeled_samples)} labeled samples and {len(unlabeled_pool)} unlabeled samples.")
+
     for round_idx in range(rounds):
         print(f"\n=== Round {round_idx + 1}/{rounds} ===")
 
@@ -51,6 +57,7 @@ def active_learning_loop(
             break
 
         model = train_model(labeled_samples)
+        print("Model trained.")
 
         if len(unlabeled_pool) == 0:
             print("No unlabeled samples left.")
@@ -66,12 +73,9 @@ def active_learning_loop(
 
         labeled_samples.extend(query_samples)
 
-        query_keys = {(s.track_id, s.beat_idx) for s in query_samples}
-        unlabeled_pool = [
-            s for s in unlabeled_pool
-            if (s.track_id, s.beat_idx) not in query_keys
-        ]
+        unlabeled_pool = pool_filter(unlabeled_pool, labeled_samples)
 
-        print(f"Labeled samples total: {len(labeled_samples)}")
+        print(f"Labeled samples total: {len(labeled_samples)}, Unlabeled pool remaining: {len(unlabeled_pool)}")
 
+    call_scores()
     return model, labeled_samples

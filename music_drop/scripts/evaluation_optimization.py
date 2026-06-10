@@ -1,23 +1,16 @@
-# This script runs a curated set of experiments with different ML models and ml_drop parameters,
-
-# 06.06.2026: Unfortunately, initial model I had was already very close to optimal, so the curated sweep didn't yield significant improvements. 
-# I will freeze the current model and try to improve it by adding more training data and/or features, rather than by tuning hyperparameters.
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List
+from collections import Counter
+from itertools import product
 import csv
 import json
 import os
 import time
 
-from sklearn.ensemble import (
-    ExtraTreesClassifier,
-    RandomForestClassifier,
-    HistGradientBoostingClassifier,
-)
+from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -28,7 +21,13 @@ from music_drop.src.training.train import train_model
 
 
 LABEL_SPLIT = "train"
-RESULTS_CSV = Path("music_drop", "data", "curated_model_sweep.csv")
+
+# IMPORTANT: use a fresh CSV so old runs do not affect counts/resume logic
+RESULTS_CSV = Path("music_drop", "data", "centered_sweep_200.csv")
+
+PRIMARY_TOL = 7
+TIE_TOL = 2
+EXPECTED_EXPERIMENTS = 200
 
 
 @dataclass
@@ -40,9 +39,9 @@ class Experiment:
     model_factory: Callable[..., Any]
 
 
-# =========================
+# =========================================================
 # Model factories
-# =========================
+# =========================================================
 
 def make_logreg(C: float) -> Pipeline:
     return Pipeline([
@@ -72,23 +71,6 @@ def make_extratrees(
     )
 
 
-def make_random_forest(
-    n_estimators: int,
-    min_samples_leaf: int,
-    max_features: Any,
-    max_depth: Any,
-) -> RandomForestClassifier:
-    return RandomForestClassifier(
-        n_estimators=n_estimators,
-        min_samples_leaf=min_samples_leaf,
-        max_features=max_features,
-        max_depth=max_depth,
-        class_weight="balanced",
-        random_state=0,
-        n_jobs=-1,
-    )
-
-
 def make_hgb(
     max_iter: int,
     learning_rate: float,
@@ -106,72 +88,135 @@ def make_hgb(
     )
 
 
-# =========================
-# Curated model configs
-# =========================
+# =========================================================
+# Champion-centered configs
+# =========================================================
 
-LOGREG_CONFIGS = [
-    {"C": 0.005},
-    {"C": 0.01},
-    {"C": 0.02},
-    {"C": 0.05},
-    {"C": 0.1},
-]
+# Your known-good baseline model
+CHAMPION_ET = {
+    "n_estimators": 500,
+    "min_samples_leaf": 2,
+    "max_features": "sqrt",
+    "max_depth": None,
+}
 
-EXTRATREES_CONFIGS = [
-    {"n_estimators": 400, "min_samples_leaf": 1, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 800, "min_samples_leaf": 1, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 400, "min_samples_leaf": 2, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 800, "min_samples_leaf": 2, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 400, "min_samples_leaf": 4, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 800, "min_samples_leaf": 4, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 500, "min_samples_leaf": 2, "max_features": 0.5, "max_depth": None},
-    {"n_estimators": 500, "min_samples_leaf": 2, "max_features": "sqrt", "max_depth": 20},
-]
+# Your known-good extraction config
+CHAMPION_ML_DROP = {
+    "min_score": 0.60,
+    "heuristic_threshold": 0.10,
+    "min_gap_sec": 10,
+}
 
-HGB_CONFIGS = [
-    {"max_iter": 300, "learning_rate": 0.05, "max_leaf_nodes": 15, "min_samples_leaf": 10, "l2_regularization": 0.1},
-    {"max_iter": 300, "learning_rate": 0.05, "max_leaf_nodes": 31, "min_samples_leaf": 10, "l2_regularization": 0.1},
-    {"max_iter": 300, "learning_rate": 0.03, "max_leaf_nodes": 31, "min_samples_leaf": 10, "l2_regularization": 0.1},
-    {"max_iter": 500, "learning_rate": 0.03, "max_leaf_nodes": 31, "min_samples_leaf": 10, "l2_regularization": 0.1},
-    {"max_iter": 300, "learning_rate": 0.05, "max_leaf_nodes": 15, "min_samples_leaf": 5, "l2_regularization": 0.0},
-    {"max_iter": 500, "learning_rate": 0.05, "max_leaf_nodes": 31, "min_samples_leaf": 5, "l2_regularization": 0.0},
-]
-
-RANDOM_FOREST_CONFIGS = [
-    {"n_estimators": 500, "min_samples_leaf": 1, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 500, "min_samples_leaf": 2, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 800, "min_samples_leaf": 2, "max_features": "sqrt", "max_depth": None},
-    {"n_estimators": 500, "min_samples_leaf": 2, "max_features": 0.5, "max_depth": None},
-]
+# We want exactly:
+# 32 ExtraTrees configs
+# 4 HGB configs
+# 4 LogReg configs
+# 5 ml_drop configs
+# => (32 + 4 + 4) * 5 = 200
 
 
-# =========================
-# Curated ml_drop params
-# =========================
-LOGREG_ML_DROP_CONFIGS = [
-    {"min_score": 0.60, "heuristic_threshold": 0.10, "min_gap_sec": 16},
-    {"min_score": 0.65, "heuristic_threshold": 0.10, "min_gap_sec": 20},
-    {"min_score": 0.70, "heuristic_threshold": 0.10, "min_gap_sec": 20},
-    {"min_score": 0.75, "heuristic_threshold": 0.10, "min_gap_sec": 24},
-]
+def build_extratrees_configs() -> List[Dict[str, Any]]:
+    """
+    Build exactly 32 ET configs, centered on the champion.
+    """
 
-TREE_ML_DROP_CONFIGS = [
-    {"min_score": 0.50, "heuristic_threshold": 0.10, "min_gap_sec": 16},
-    {"min_score": 0.55, "heuristic_threshold": 0.10, "min_gap_sec": 20},
-    {"min_score": 0.60, "heuristic_threshold": 0.10, "min_gap_sec": 20},
-    {"min_score": 0.65, "heuristic_threshold": 0.10, "min_gap_sec": 24},
-    {"min_score": 0.70, "heuristic_threshold": 0.10, "min_gap_sec": 24},
-]
+    # 24 base configs around champion, no depth restriction
+    base = [
+        {
+            "n_estimators": n_estimators,
+            "min_samples_leaf": min_samples_leaf,
+            "max_features": max_features,
+            "max_depth": None,
+        }
+        for n_estimators, min_samples_leaf, max_features in product(
+            [300, 500, 800],        # around champion 500
+            [1, 2, 4, 6],           # around champion 2
+            ["sqrt", 0.5],          # around champion "sqrt"
+        )
+    ]
+    assert len(base) == 24
 
+    # 8 additional depth-constrained variants near champion
+    depth_variants = [
+        {"n_estimators": 500, "min_samples_leaf": 1, "max_features": "sqrt", "max_depth": 20},
+        {"n_estimators": 500, "min_samples_leaf": 2, "max_features": "sqrt", "max_depth": 20},
+        {"n_estimators": 500, "min_samples_leaf": 4, "max_features": "sqrt", "max_depth": 20},
+        {"n_estimators": 500, "min_samples_leaf": 2, "max_features": 0.5,  "max_depth": 20},
+        {"n_estimators": 800, "min_samples_leaf": 2, "max_features": "sqrt", "max_depth": 20},
+        {"n_estimators": 800, "min_samples_leaf": 4, "max_features": "sqrt", "max_depth": 20},
+        {"n_estimators": 800, "min_samples_leaf": 2, "max_features": 0.5,  "max_depth": 20},
+        {"n_estimators": 300, "min_samples_leaf": 2, "max_features": "sqrt", "max_depth": 20},
+    ]
+    assert len(depth_variants) == 8
+
+    configs = base + depth_variants
+    assert len(configs) == 32
+
+    # Ensure uniqueness
+    uniq = {
+        json.dumps(cfg, sort_keys=True): cfg
+        for cfg in configs
+    }
+    assert len(uniq) == 32, "Duplicate ET configs detected"
+
+    return list(uniq.values())
+
+
+def build_hgb_configs() -> List[Dict[str, Any]]:
+    configs = [
+        {"max_iter": 200, "learning_rate": 0.05, "max_leaf_nodes": 15, "min_samples_leaf": 10, "l2_regularization": 0.1},
+        {"max_iter": 300, "learning_rate": 0.05, "max_leaf_nodes": 31, "min_samples_leaf": 10, "l2_regularization": 0.1},
+        {"max_iter": 300, "learning_rate": 0.03, "max_leaf_nodes": 31, "min_samples_leaf": 10, "l2_regularization": 0.1},
+        {"max_iter": 500, "learning_rate": 0.03, "max_leaf_nodes": 31, "min_samples_leaf": 10, "l2_regularization": 0.1},
+    ]
+    assert len(configs) == 4
+    return configs
+
+
+def build_logreg_configs() -> List[Dict[str, Any]]:
+    configs = [
+        {"C": 0.005},
+        {"C": 0.01},
+        {"C": 0.02},
+        {"C": 0.05},
+    ]
+    assert len(configs) == 4
+    return configs
+
+
+def build_ml_drop_configs() -> List[Dict[str, Any]]:
+    """
+    5 extraction configs:
+    - include exact champion
+    - a bit more permissive
+    - a bit more conservative
+    """
+    configs = [
+        dict(CHAMPION_ML_DROP),  # exact champion
+        {"min_score": 0.55, "heuristic_threshold": 0.10, "min_gap_sec": 12},
+        {"min_score": 0.50, "heuristic_threshold": 0.10, "min_gap_sec": 16},
+        {"min_score": 0.65, "heuristic_threshold": 0.10, "min_gap_sec": 20},
+        {"min_score": 0.70, "heuristic_threshold": 0.10, "min_gap_sec": 24},
+    ]
+    assert len(configs) == 5
+    return configs
 
 
 def build_experiments() -> List[Experiment]:
+    et_configs = build_extratrees_configs()
+    hgb_configs = build_hgb_configs()
+    logreg_configs = build_logreg_configs()
+    ml_drop_configs = build_ml_drop_configs()
+
     experiments: List[Experiment] = []
 
-    def add_family(family: str, factory: Callable[..., Any], configs: List[Dict[str, Any]], ml_configs: List[Dict[str, Any]]):
+    def add_family(
+        family: str,
+        factory: Callable[..., Any],
+        configs: List[Dict[str, Any]],
+    ):
         for model_params in configs:
-            for ml_params in ml_configs:
+            for ml_params in ml_drop_configs:
                 exp_id = (
                     f"{family}|"
                     f"{json.dumps(model_params, sort_keys=True)}|"
@@ -187,21 +232,37 @@ def build_experiments() -> List[Experiment]:
                     )
                 )
 
-    add_family("logreg", make_logreg, LOGREG_CONFIGS, LOGREG_ML_DROP_CONFIGS)
-    add_family("extratrees", make_extratrees, EXTRATREES_CONFIGS, TREE_ML_DROP_CONFIGS)
-    add_family("hgb", make_hgb, HGB_CONFIGS, TREE_ML_DROP_CONFIGS)
-    add_family("random_forest", make_random_forest, RANDOM_FOREST_CONFIGS, TREE_ML_DROP_CONFIGS)
+    add_family("extratrees", make_extratrees, et_configs)
+    add_family("hgb", make_hgb, hgb_configs)
+    add_family("logreg", make_logreg, logreg_configs)
+
+    # Stable order
+    family_order = {"extratrees": 0, "hgb": 1, "logreg": 2}
+    experiments.sort(
+        key=lambda e: (
+            family_order[e.family],
+            json.dumps(e.model_params, sort_keys=True),
+            json.dumps(e.ml_drop_params, sort_keys=True),
+        )
+    )
+
+    # Hard assertions so count can never silently drift
+    family_counts = Counter(e.family for e in experiments)
+    assert family_counts["extratrees"] == 32 * 5
+    assert family_counts["hgb"] == 4 * 5
+    assert family_counts["logreg"] == 4 * 5
+    assert len(experiments) == EXPECTED_EXPERIMENTS, (
+        f"Expected {EXPECTED_EXPERIMENTS}, got {len(experiments)}"
+    )
 
     return experiments
 
 
+# =========================================================
+# Utilities
+# =========================================================
 
 def normalize_result(result: Any) -> Dict[str, Any]:
-    """
-    Supports:
-    - dict with precision/recall/f1
-    - tuple/list (precision, recall, f1)
-    """
     if result is None:
         return {"precision": None, "recall": None, "f1": None}
 
@@ -255,42 +316,11 @@ def append_row(csv_path: Path, row: Dict[str, Any], fieldnames: List[str]) -> No
 
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
-
         if not file_exists:
             writer.writeheader()
-
         writer.writerow(row)
         f.flush()
         os.fsync(f.fileno())
-
-
-def print_top_results(rows: List[Dict[str, Any]], top_k: int = 8) -> None:
-    cleaned = []
-    for r in rows:
-        try:
-            if r.get("status") == "ok" and r.get("f1") not in ("", None):
-                cleaned.append({
-                    **r,
-                    "precision": float(r["precision"]),
-                    "recall": float(r["recall"]),
-                    "f1": float(r["f1"]),
-                })
-        except Exception:
-            pass
-
-    cleaned.sort(key=lambda r: r["f1"], reverse=True)
-
-    print("\n" + "=" * 130)
-    print(f"Top {min(top_k, len(cleaned))} results so far:")
-    for r in cleaned[:top_k]:
-        print(
-            f"F1={r['f1']:.4f}  "
-            f"P={r['precision']:.4f}  "
-            f"R={r['recall']:.4f}  "
-            f"family={r['family']}  "
-            f"model_params={r['model_params']}  "
-            f"ml_drop_params={r['ml_drop_params']}"
-        )
 
 
 def format_seconds(sec: float) -> str:
@@ -305,6 +335,65 @@ def format_seconds(sec: float) -> str:
     return f"{s}s"
 
 
+def rank_key(row: Dict[str, Any]):
+    f1p = row.get("f1_primary")
+    f1t = row.get("f1_tie")
+    f1p = float(f1p) if f1p not in (None, "", "None") else -1.0
+    f1t = float(f1t) if f1t not in (None, "", "None") else -1.0
+    return (f1p, f1t)
+
+
+def print_top_results(rows: List[Dict[str, Any]], top_k: int = 10) -> None:
+    cleaned = []
+    for r in rows:
+        if r.get("status") != "ok":
+            continue
+        try:
+            cleaned.append({
+                **r,
+                "precision_primary": float(r["precision_primary"]),
+                "recall_primary": float(r["recall_primary"]),
+                "f1_primary": float(r["f1_primary"]),
+                "precision_tie": float(r["precision_tie"]),
+                "recall_tie": float(r["recall_tie"]),
+                "f1_tie": float(r["f1_tie"]),
+            })
+        except Exception:
+            pass
+
+    cleaned.sort(key=rank_key, reverse=True)
+
+    print("\n" + "=" * 140)
+    print(f"Top {min(top_k, len(cleaned))} results so far (sorted by F1@{PRIMARY_TOL}, then F1@{TIE_TOL}):")
+    for r in cleaned[:top_k]:
+        print(
+            f"F1@{PRIMARY_TOL}={r['f1_primary']:.4f}  "
+            f"F1@{TIE_TOL}={r['f1_tie']:.4f}  "
+            f"P@{PRIMARY_TOL}={r['precision_primary']:.4f}  "
+            f"R@{PRIMARY_TOL}={r['recall_primary']:.4f}  "
+            f"family={r['family']}  "
+            f"model_params={r['model_params']}  "
+            f"ml_drop_params={r['ml_drop_params']}"
+        )
+
+
+def evaluate_at_tolerances(ml_drop_params: Dict[str, Any]) -> Dict[str, Any]:
+    p1, r1, f1 = evaluate_drop_level(ml_drop_params, tolerance_beats=PRIMARY_TOL)
+    p2, r2, f2 = evaluate_drop_level(ml_drop_params, tolerance_beats=TIE_TOL)
+    return {
+        "precision_primary": p1,
+        "recall_primary": r1,
+        "f1_primary": f1,
+        "precision_tie": p2,
+        "recall_tie": r2,
+        "f1_tie": f2,
+    }
+
+
+# =========================================================
+# Main
+# =========================================================
+
 def main():
     labeled_samples = load_labeled_samples(split=LABEL_SPLIT)
     if len(labeled_samples) == 0:
@@ -315,9 +404,16 @@ def main():
     done_ids = load_done_experiment_ids(RESULTS_CSV)
     existing_rows = load_existing_rows(RESULTS_CSV)
 
+    family_counts = Counter(e.family for e in experiments)
+
     print(f"Loaded {len(labeled_samples)} labeled samples.")
-    print(f"Built {len(experiments)} curated experiments.")
-    print(f"Already completed: {len(done_ids)}")
+    print(f"Built {len(experiments)} experiments.")
+    print(f"Breakdown: {dict(family_counts)}")
+    print(f"Champion ET config: {CHAMPION_ET}")
+    print(f"Champion ml_drop config: {CHAMPION_ML_DROP}")
+    print(f"Primary tolerance: {PRIMARY_TOL}")
+    print(f"Tie-break tolerance: {TIE_TOL}")
+    print(f"Already completed in CSV: {len(done_ids)}")
 
     fieldnames = [
         "exp_id",
@@ -325,9 +421,12 @@ def main():
         "family",
         "model_params",
         "ml_drop_params",
-        "precision",
-        "recall",
-        "f1",
+        "precision_primary",
+        "recall_primary",
+        "f1_primary",
+        "precision_tie",
+        "recall_tie",
+        "f1_tie",
         "elapsed_sec",
         "error",
     ]
@@ -345,11 +444,11 @@ def main():
     start_all = time.time()
     completed_this_session = 0
 
-    for idx, exp in enumerate(experiments, 1):
+    for exp in experiments:
         if exp.exp_id in done_ids:
             continue
 
-        print("\n" + "=" * 130)
+        print("\n" + "=" * 140)
         print(f"Running experiment {completed_this_session + 1}/{total_to_run}")
         print(f"family: {exp.family}")
         print(f"model_params: {exp.model_params}")
@@ -361,9 +460,12 @@ def main():
             "family": exp.family,
             "model_params": json.dumps(exp.model_params, sort_keys=True),
             "ml_drop_params": json.dumps(exp.ml_drop_params, sort_keys=True),
-            "precision": None,
-            "recall": None,
-            "f1": None,
+            "precision_primary": None,
+            "recall_primary": None,
+            "f1_primary": None,
+            "precision_tie": None,
+            "recall_tie": None,
+            "f1_tie": None,
             "elapsed_sec": None,
             "error": "",
         }
@@ -373,18 +475,13 @@ def main():
             ml_model = exp.model_factory(**exp.model_params)
             train_model(labeled_samples=labeled_samples, ml_model=ml_model)
 
-            result = evaluate_drop_level(exp.ml_drop_params)
-            norm = normalize_result(result)
-
-            row["precision"] = norm["precision"]
-            row["recall"] = norm["recall"]
-            row["f1"] = norm["f1"]
+            scores = evaluate_at_tolerances(exp.ml_drop_params)
+            row.update(scores)
 
             print(
                 f"Result -> "
-                f"P={row['precision']} "
-                f"R={row['recall']} "
-                f"F1={row['f1']}"
+                f"F1@{PRIMARY_TOL}={row['f1_primary']:.4f}, "
+                f"F1@{TIE_TOL}={row['f1_tie']:.4f}"
             )
 
         except Exception as e:
@@ -410,7 +507,7 @@ def main():
 
         print_top_results(all_rows, top_k=8)
 
-    print("\n" + "=" * 130)
+    print("\n" + "=" * 140)
     print(f"Finished. Results saved to: {RESULTS_CSV}")
     print_top_results(all_rows, top_k=15)
 

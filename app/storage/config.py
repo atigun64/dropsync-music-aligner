@@ -7,6 +7,8 @@ DATA_DIR = APP_DIR / "data"
 TRACKS_ROOT = DATA_DIR / "track_library"
 STUDIOS_ROOT = DATA_DIR / "studios"
 AUDIO_UPLOADS_DIR = DATA_DIR / "audio_uploads"
+VIDEO_UPLOADS_DIR = DATA_DIR / "video_uploads"
 
-# Ensure upload directory exists
+# Ensure upload directories exist
 AUDIO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+VIDEO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)

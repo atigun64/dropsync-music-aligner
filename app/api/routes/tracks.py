@@ -10,7 +10,7 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, s
 from fastapi.responses import FileResponse
 
 from app.api.deps import get_track_service
-from app.models import AnnotationPoint, TrackMeta
+from app.models import AlignmentSpec, AnnotationPoint, TrackMeta
 from app.schemas import (
     TrackRecordSchema,
     TrackListItemSchema,
@@ -140,18 +140,12 @@ def get_track_audio(track_id: str, service: TrackService = Depends(get_track_ser
 
         mime_type, _ = mimetypes.guess_type(str(audio_path))
 
+        if not audio_path.exists():
+            raise HTTPException(status_code=404, detail="Audio file not found")
+        
         return FileResponse(
             path=str(audio_path),
             media_type=mime_type or "application/octet-stream",
-            filename=audio_path.name,
-        )
-
-        if not audio_path.exists():
-            raise HTTPException(status_code=404, detail="Audio file not found")
-
-        return FileResponse(
-            path=str(audio_path),
-            media_type="audio/mpeg",
             filename=audio_path.name,
         )
 

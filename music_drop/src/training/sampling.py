@@ -61,6 +61,8 @@ def build_pool(track_ids):
             payload["B"],
         )
 
+        print(f"Track {track_id}: found {len(scores)} scored candidates")
+
         for beat_idx, hscore in enumerate(scores):
             if hscore > 0.6:   # heuristic threshold for pool inclusion
                 pool.append(

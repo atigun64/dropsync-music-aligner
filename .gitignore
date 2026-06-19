@@ -1,5 +1,40 @@
+# Environment
 .env
-data
-/music_drop/data
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.python-version
+venv/
+.venv/
+ENV/
+env/
+
+# Node
+node_modules/
+/dist
+/build
+/.vite
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated project data
+data/
+app/data/
+/music_drop/data/
 /music_drop/data backup
+
 drop_model.joblib
+
+# Frontend build
+frontend/dist/
+frontend/build/

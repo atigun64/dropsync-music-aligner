@@ -1,4 +1,5 @@
 from typing import List
+from pathlib import Path
 
 from app.services.track_service import TrackService
 from app.storage import STUDIO_STORE
@@ -11,6 +12,8 @@ from app.models import (
 )
 
 from app.services.run_optimization import run_optimizer as compile_alignment
+from app.services.audio_service import ensure_studio_audio_for_alignment
+from app.services.exceptions import StudioNotFound, AlignmentNotFound
 
 class StudioService:
     """
@@ -35,7 +38,10 @@ class StudioService:
         """
         Load the full studio session, including meta, query, and alignment.
         """
-        return self.studio_store.load_session(studio_id)
+        try:
+            return self.studio_store.load_session(studio_id)
+        except FileNotFoundError:
+            raise StudioNotFound()
     
     def save_studio_session(self, session: StudioSession) -> None:
         """
@@ -66,7 +72,7 @@ class StudioService:
         """
         session = self.studio_store.load_session(studio_id)
         if session.alignment is None:
-            raise ValueError("Alignment not found for this studio session.")
+            raise AlignmentNotFound()
         return session.alignment
     
     def save_alignment(self, studio_id: str, alignment: AlignmentSpec) -> None:
@@ -75,6 +81,24 @@ class StudioService:
         """
         session = self.studio_store.load_session(studio_id)
         session.alignment = alignment
+        self.studio_store.save_session(session)
+
+    def render_audio_for_studio(self, studio_id: str) -> Path:
+        """Ensure audio exists for the studio alignment and return path."""
+        alignment = self.load_alignment(studio_id)
+        return ensure_studio_audio_for_alignment(alignment, studio_id)
+
+    def update_video_path(self, studio_id: str, video_path: str) -> None:
+        session = self.studio_store.load_session(studio_id)
+        session.meta.video_path = video_path
+        session.meta.source = "video"
+        self.studio_store.save_session(session)
+
+    def update_metadata(self, studio_id: str, meta) -> None:
+        session = self.studio_store.load_session(studio_id)
+        session.meta.source = meta.source
+        session.meta.video_path = meta.video_path
+        session.meta.notes = meta.notes
         self.studio_store.save_session(session)
 
     def run_optimizer(self, studio_id: str) -> AlignmentSpec:

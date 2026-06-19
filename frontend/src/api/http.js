@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const API_BASE = "";
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -20,13 +20,36 @@ async function request(path, options = {}) {
     throw new Error(detail);
   }
 
-  // Some endpoints may return empty response bodies.
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
 
+async function requestBlob(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
+    ...options,
+  });
+
+  if (!res.ok) {
+    let detail = `Request failed: ${res.status}`;
+    try {
+      const data = await res.json();
+      detail = data.detail || detail;
+    } catch {
+      // ignore JSON parse errors
+    }
+    throw new Error(detail);
+  }
+
+  return await res.blob();
+}
+
 export function apiGet(path) {
   return request(path, { method: "GET" });
+}
+
+export function apiGetBlob(path) {
+  return requestBlob(path, { method: "GET" });
 }
 
 export function apiPost(path, body) {

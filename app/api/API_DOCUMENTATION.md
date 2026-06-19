@@ -184,6 +184,8 @@ Load complete studio session with metadata, query, and alignment.
         "strength": 1.0
       }
     ]
+
+> Note: the optimizer uses requested point labels of `drop` as anchor requests. The UI also accepts `marker` for backward compatibility and translates it to `drop`.
   },
   "alignment": {
     "score": 0.95,

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.models import AnnotationPoint, TrackMeta, TrackRecord
 from .config import TRACKS_ROOT
+
+_UUID_PREFIX_RE = re.compile(r"^[0-9a-f]{32}_(.+)$")
 
 
 class TrackStore:
@@ -131,6 +134,14 @@ class TrackStore:
             return []
         return sorted([p.name for p in self.root.iterdir() if p.is_dir()])
 
+    @staticmethod
+    def _display_name_from_audio_path(audio_path: str) -> str:
+        if not audio_path:
+            return ""
+        name = Path(audio_path).name
+        match = _UUID_PREFIX_RE.match(name)
+        return match.group(1) if match else name
+
     def list_tracks(self) -> List[Dict[str, Any]]:
         """
         Lightweight info for UI lists.
@@ -138,7 +149,7 @@ class TrackStore:
         out: List[Dict[str, Any]] = []
         for tid in self.list_track_ids():
             rec = self.load_track(tid)
-            display_name = Path(rec.audio_path).name if rec.audio_path else tid
+            display_name = self._display_name_from_audio_path(rec.audio_path) or tid
             out.append(
                 {
                     "track_id": tid,

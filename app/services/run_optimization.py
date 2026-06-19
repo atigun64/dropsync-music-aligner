@@ -30,9 +30,15 @@ def _queryspec_to_optimizer(query: QuerySpec) -> O_Query:
     oq.set_signature(O_TrackSignature(list(query.signature)))
 
     for p in query.requested_points:
+        label = p.label
+        if label == "marker":
+            # The UI previously saved query annotations as "marker".
+            # Convert these to optimizer drop requests for compatibility.
+            label = "drop"
+
         oq.add_annotation(
             O_PointAnnotation(
-                p.label,
+                label,
                 time=p.time_seconds,
                 strength=p.strength,
             )

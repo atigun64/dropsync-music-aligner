@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import List
 import math
 
+from optimizer.core.model import Optimizer
 from optimizer.models import Query, TrackLibrary, Alignment, AssignedTrack, Track, PointAnnotation
 from optimizer.scores import score_alignment_partial, score_alignment_final
 from optimizer.scores.config import MAX_ACCEPTABLE_GAP
@@ -14,11 +15,6 @@ class BeamState:
     score: float
     frontier_end: float = 0.0
     used_track_ids: set[int] = field(default_factory=set)
-
-
-class Optimizer:
-    def optimize(self, query: Query, tracks: TrackLibrary) -> Alignment:
-        raise NotImplementedError
 
 
 class BeamSearch(Optimizer):

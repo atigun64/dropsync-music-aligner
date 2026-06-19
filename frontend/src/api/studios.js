@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, apiPut } from "./http";
+import { apiDelete, apiGet, apiGetBlob, apiPost, apiPut } from "./http";
 
 // GET /api/studios
 export function listStudios() {
@@ -54,4 +54,25 @@ export function runOptimizer(studioId) {
 export function deleteStudio(studioId) {
   return apiDelete(`/api/studios/${studioId}`);
 }
-  
+
+// POST /api/studios/{studioId}/video
+// file should be FormData with field name "file"
+export function uploadStudioVideo(studioId, formData) {
+  return apiPost(`/api/studios/${studioId}/video`, formData);
+}
+
+// GET /api/studios/{studioId}/audio
+// returns the compiled studio audio as a Blob
+export function getStudioAudioBlob(studioId) {
+  return apiGetBlob(`/api/studios/${studioId}/audio`);
+}
+
+// GET /api/studios/{studioId}/video
+// returns the uploaded studio video as a Blob
+export function getStudioVideoBlob(studioId) {
+  return apiGetBlob(`/api/studios/${studioId}/video`);
+}
+
+export function getStudioVideoUrl(studioId) {
+  return `/api/studios/${studioId}/video`;
+}

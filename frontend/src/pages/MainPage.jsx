@@ -252,7 +252,7 @@ export default function MainPage() {
   function handleAddAnnotation(timeSeconds) {
     if (!selectedTrack) return;
 
-    const label = window.prompt("Annotation label?", "marker");
+    const label = window.prompt("Annotation label?", "drop");
     if (label === null) return;
 
     const strengthRaw = window.prompt("Strength (0 to 1)?", "1");

@@ -17,6 +17,12 @@ class AnnotationPoint:
     - track annotations
     - query requested points
     - aligned / placed points
+
+    Note:
+    - Query requested points are currently interpreted by the optimizer only when
+      the label is "drop".
+    - The frontend now defaults new query annotations to "drop".
+    - Existing "marker" labels are converted to "drop" for compatibility.
     """
     label: str
     time_seconds: float

@@ -242,3 +242,9 @@ class StudioStore:
             query=query,
             alignment=alignment,
         )
+
+    def alignment_path(self, studio_id: str) -> Path:
+        return self._alignment_path(studio_id)
+
+    def alignment_mtime(self, studio_id: str) -> float:
+        return self._alignment_path(studio_id).stat().st_mtime

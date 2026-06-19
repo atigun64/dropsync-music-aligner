@@ -14,10 +14,11 @@ export default function StudioSidebar({
         flexDirection: "column",
         borderTop: "1px solid #1f2937",
         background: "#0f172a",
-        minHeight: 240,
+        minHeight: 0,
+        overflow: "hidden",
       }}
     >
-      <div style={{ padding: "14px 14px 10px" }}>
+      <div style={{ padding: "14px 14px 10px", flex: "0 0 auto" }}>
         <h2 style={{ margin: 0, fontSize: 18 }}>Studios</h2>
         <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>
           {studios.length} studio sessions
@@ -26,8 +27,10 @@ export default function StudioSidebar({
 
       <div
         style={{
-          flex: 1,
+          flex: "1 1 auto",
+          minHeight: 0,
           overflowY: "auto",
+          overflowX: "hidden",
           padding: "0 10px 10px",
           display: "flex",
           flexDirection: "column",

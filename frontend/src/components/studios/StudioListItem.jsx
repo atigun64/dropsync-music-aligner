@@ -13,12 +13,6 @@ export default function StudioListItem({
     <div
       onClick={() => onSelect?.(studioId)}
       onContextMenu={handleContextMenu}
-      onMouseEnter={(e) => {
-        if (!selected) e.currentTarget.style.background = "#1b2430";
-      }}
-      onMouseLeave={(e) => {
-        if (!selected) e.currentTarget.style.background = "#111827";
-      }}
       style={{
         padding: "10px 12px",
         borderRadius: 10,
@@ -27,8 +21,6 @@ export default function StudioListItem({
         border: selected ? "1px solid #60a5fa" : "1px solid #243041",
         color: "white",
         userSelect: "none",
-        boxShadow: selected ? "0 0 0 1px rgba(96,165,250,0.15)" : "none",
-        transition: "background 0.15s ease, border 0.15s ease, transform 0.05s ease",
       }}
       title={studioId}
     >

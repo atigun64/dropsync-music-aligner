@@ -28,6 +28,17 @@ def _safe_filename(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]+", "_", name) or "track"
 
 
+_UUID_PREFIX_RE = re.compile(r"^[0-9a-f]{32}_(.+)$")
+
+
+def _display_name_from_audio_path(audio_path: str) -> str:
+    if not audio_path:
+        return ""
+    name = Path(audio_path).name
+    match = _UUID_PREFIX_RE.match(name)
+    return match.group(1) if match else name
+
+
 def _save_uploaded_file_permanently(file: UploadFile) -> Path:
     AUDIO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -146,7 +157,7 @@ def get_track_audio(track_id: str, service: TrackService = Depends(get_track_ser
         return FileResponse(
             path=str(audio_path),
             media_type=mime_type or "application/octet-stream",
-            filename=audio_path.name,
+            filename=_display_name_from_audio_path(str(audio_path)),
         )
 
     except FileNotFoundError:

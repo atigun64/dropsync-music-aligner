@@ -25,12 +25,26 @@ EPS = 1e-9
 # Helpers
 # --------------------------------------------------
 
+def strenght_to_weight(strength: float) -> float:
+    """
+    Put different strenghts to buckets.
+    """
+    strength = clamp01(strength)
+    if strength <= 0.5:
+        return 0.5
+    elif strength <= 0.75:
+        return 0.75
+    elif strength < 0.9:
+        return 0.9
+    else:
+        return 1.0
+
 def importance(strength: float) -> float:
     """
     Convert request strength [0,1] into an aggregation weight.
     """
     strength = clamp01(strength)
-    return strength ** STRENGTH_POWER
+    return strenght_to_weight(strength) ** STRENGTH_POWER
 
 
 def timing_quality(time_diff_ticks: float) -> float:

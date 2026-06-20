@@ -32,6 +32,7 @@ data/
 app/data/
 /music_drop/data/
 /music_drop/data backup
+/music_downloads
 
 drop_model.joblib
 

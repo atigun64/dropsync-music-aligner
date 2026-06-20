@@ -1,1 +1,1 @@
-from .optimizer import BeamSearch
+from .beam_search import BeamSearch

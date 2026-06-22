@@ -6,9 +6,11 @@ import { listStudios, createStudio, deleteStudio } from "../api/studios";
 
 import { normalizeTrackListItem, normalizeTrackRecord } from "../schemas/track";
 import { createAnnotation } from "../schemas/annotation";
+import { compareNumericIds } from "../utils/sortIds";
 
 import LoadingState from "../components/shared/LoadingState";
 import ContextMenu from "../components/shared/ContextMenu";
+import { useAppDialog } from "../components/shared/AppDialogProvider";
 import TrackSidebar from "../components/tracks/TrackSidebar";
 import TrackTimeline from "../components/tracks/TrackTimeline";
 import StudioSidebar from "../components/studios/StudioSidebar";
@@ -51,6 +53,7 @@ function getFileDuration(file) {
 
 export default function MainPage() {
   const navigate = useNavigate();
+  const { prompt, confirm } = useAppDialog();
 
   // -----------------------------
   // Main page state
@@ -103,9 +106,10 @@ export default function MainPage() {
 
     try {
       const rawList = await listTracks();
-      const normalizedList = Array.isArray(rawList)
+      const normalizedList = (Array.isArray(rawList)
         ? rawList.map(normalizeTrackListItem)
-        : [];
+        : []
+      ).sort((a, b) => compareNumericIds(a.track_id, b.track_id));
 
       setTracks(normalizedList);
 
@@ -140,7 +144,9 @@ export default function MainPage() {
 
     try {
       const rawList = await listStudios();
-      const normalizedList = Array.isArray(rawList) ? rawList.map(String) : [];
+      const normalizedList = (Array.isArray(rawList) ? rawList.map(String) : []).sort(
+        compareNumericIds
+      );
 
       setStudios(normalizedList);
 
@@ -249,23 +255,35 @@ export default function MainPage() {
   // -----------------------------
   // Annotation actions
   // -----------------------------
-  function handleAddAnnotation(timeSeconds) {
+  async function handleAddAnnotation(timeSeconds) {
     if (!selectedTrack) return;
 
-    const label = window.prompt("Annotation label?", "drop");
-    if (label === null) return;
+    const result = await prompt({
+      title: "Add annotation",
+      submitLabel: "Add",
+      fields: [
+        { key: "label", label: "Label", defaultValue: "drop" },
+        {
+          key: "strength",
+          label: "Strength (0 to 1)",
+          type: "number",
+          defaultValue: "1",
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+      ],
+    });
+    if (!result) return;
 
-    const strengthRaw = window.prompt("Strength (0 to 1)?", "1");
-    if (strengthRaw === null) return;
-
-    const strength = Number(strengthRaw);
-    if (Number.isNaN(strength)) {
+    const strength = Number(result.strength);
+    if (!Number.isFinite(strength)) {
       setError("Strength must be a number");
       return;
     }
 
     const newAnnotation = createAnnotation({
-      label,
+      label: result.label,
       time_seconds: timeSeconds,
       strength,
     });
@@ -285,32 +303,48 @@ export default function MainPage() {
     scheduleAnnotationSave(next);
   }
 
-  function handleSelectAnnotation(index) {
+  async function handleSelectAnnotation(index) {
     if (!selectedTrack) return;
 
     const ann = selectedTrack.annotations[index];
     if (!ann) return;
 
-    // Simple edit flow for now:
-    const label = window.prompt("Edit label", ann.label);
-    if (label === null) return;
+    const result = await prompt({
+      title: "Edit annotation",
+      submitLabel: "Save",
+      fields: [
+        { key: "label", label: "Label", defaultValue: ann.label },
+        {
+          key: "time_seconds",
+          label: "Time (seconds)",
+          type: "number",
+          defaultValue: String(ann.time_seconds),
+          min: 0,
+          step: 0.01,
+        },
+        {
+          key: "strength",
+          label: "Strength (0 to 1)",
+          type: "number",
+          defaultValue: String(ann.strength),
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+      ],
+    });
+    if (!result) return;
 
-    const timeRaw = window.prompt("Edit time (seconds)", String(ann.time_seconds));
-    if (timeRaw === null) return;
+    const timeSeconds = Number(result.time_seconds);
+    const strength = Number(result.strength);
 
-    const strengthRaw = window.prompt("Edit strength", String(ann.strength));
-    if (strengthRaw === null) return;
-
-    const timeSeconds = Number(timeRaw);
-    const strength = Number(strengthRaw);
-
-    if (Number.isNaN(timeSeconds) || Number.isNaN(strength)) {
+    if (!Number.isFinite(timeSeconds) || !Number.isFinite(strength)) {
       setError("Time and strength must be numbers");
       return;
     }
 
     updateAnnotationAtIndex(index, {
-      label,
+      label: result.label,
       time_seconds: timeSeconds,
       strength,
     });
@@ -418,7 +452,12 @@ export default function MainPage() {
           label: `Delete track`,
           danger: true,
           onClick: async () => {
-            const ok = window.confirm(`Delete track "${track.track_id}"?`);
+            const ok = await confirm({
+              title: "Delete track",
+              message: `Delete track "${track.track_id}"? This cannot be undone.`,
+              confirmLabel: "Delete",
+              danger: true,
+            });
             if (!ok) return;
 
             try {
@@ -471,7 +510,12 @@ export default function MainPage() {
           label: `Delete studio`,
           danger: true,
           onClick: async () => {
-            const ok = window.confirm(`Delete studio "${studioId}"?`);
+            const ok = await confirm({
+              title: "Delete studio",
+              message: `Delete studio "${studioId}"? This cannot be undone.`,
+              confirmLabel: "Delete",
+              danger: true,
+            });
             if (!ok) return;
 
             try {
@@ -487,165 +531,108 @@ export default function MainPage() {
   }
 
   return (
-    <div
-      onClick={closeContextMenu}
-      style={{
-        height: "100vh",
-        background: "#0f1115",
-        color: "#e5e7eb",
-        display: "grid",
-        gridTemplateColumns: "340px minmax(0, 1fr)",
-        overflow: "hidden",
-      }}
-    >
-      {/* LEFT SIDE: track list */}
-      <TrackSidebar
-        tracks={tracks}
-        selectedTrackId={selectedTrackId}
-        onSelectTrack={handleSelectTrack}
-        onTrackContextMenu={openTrackContextMenu}
-        onSingleFilesSelected={handleSingleFilesSelected}
-        onFolderFilesSelected={handleFolderFilesSelected}
-      />
+    <div className="library-page" onClick={closeContextMenu}>
+      <header className="library-header">
+        <div>
+          <h1 className="library-header__title">Music Matcher</h1>
+          <p className="library-header__subtitle">
+            {tracks.length} track{tracks.length === 1 ? "" : "s"} · {studios.length} studio
+            {studios.length === 1 ? "" : "s"}
+          </p>
+        </div>
+      </header>
 
-      {/* RIGHT SIDE */}
-      <div
-        style={{
-          minWidth: 0,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        {/* TOP RIGHT: selected track timeline */}
-        <div
-          style={{
-            padding: 16,
-            flex: "0 0 auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-            minHeight: 0,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <h2 style={{ margin: 0 }}>Track Timeline</h2>
-              <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>
-                {selectedTrack
-                  ? `Selected: ${selectedTrack.track_id}`
-                  : "Select a track from the left"}
+      <div className="library-body">
+        <TrackSidebar
+          tracks={tracks}
+          selectedTrackId={selectedTrackId}
+          onSelectTrack={handleSelectTrack}
+          onTrackContextMenu={openTrackContextMenu}
+          onSingleFilesSelected={handleSingleFilesSelected}
+          onFolderFilesSelected={handleFolderFilesSelected}
+        />
+
+        <div className="library-main">
+          <section className="library-panel">
+            <div className="library-panel__header">
+              <div>
+                <h2 className="library-panel__heading">Track editor</h2>
+                <p className="library-panel__hint">
+                  {selectedTrack
+                    ? `Editing ${selectedTrack.track_id} · Space play/pause · ← → ±10s`
+                    : "Select a track to annotate"}
+                </p>
               </div>
-            </div>
-
-            <div style={{ color: "#9ca3af", fontSize: 13 }}>
-              {selectedTrack ? (
-                <>
-                  Duration: {selectedTrack.meta.length_seconds.toFixed(1)}s ·{" "}
-                  Annotations: {selectedTrack.annotations.length}
-                </>
-              ) : (
-                ""
+              {selectedTrack && (
+                <div className="library-panel__stats">
+                  {selectedTrack.meta.length_seconds.toFixed(1)}s ·{" "}
+                  {selectedTrack.annotations.length} annotations
+                </div>
               )}
             </div>
-          </div>
 
-          {loadingTracks && !selectedTrack ? (
-            <LoadingState label="Loading tracks..." />
-          ) : (
-            <div style={{ minHeight: 180 }}>
-              <TrackTimeline
-                track={selectedTrack}
-                onAddAnnotation={handleAddAnnotation}
-                onMoveAnnotation={handleMoveAnnotation}
-                onDeleteAnnotation={handleDeleteAnnotation}
-                onSelectAnnotation={handleSelectAnnotation}
-              />
+            <div className="library-panel__content">
+              {loadingTracks && !selectedTrack ? (
+                <LoadingState label="Loading tracks…" />
+              ) : (
+                <TrackTimeline
+                  track={selectedTrack}
+                  onAddAnnotation={handleAddAnnotation}
+                  onMoveAnnotation={handleMoveAnnotation}
+                  onDeleteAnnotation={handleDeleteAnnotation}
+                  onSelectAnnotation={handleSelectAnnotation}
+                />
+              )}
             </div>
-          )}
+          </section>
 
-          {status && (
-            <div style={{ color: "#93c5fd", fontSize: 13 }}>{status}</div>
-          )}
-
-          {error && (
-            <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>
-          )}
-
-          {uploading && (
-            <div style={{ color: "#fbbf24", fontSize: 13 }}>
-              Uploading and waiting for backend analysis...
-            </div>
-          )}
-        </div>
-
-        {/* BOTTOM RIGHT: studios */}
-        <div
-          style={{
-            padding: 16,
-            borderTop: "1px solid #1f2937",
-            flex: "1 1 auto",
-            minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              flex: "0 0 auto",
-            }}
-          >
-            <div>
-              <h2 style={{ margin: 0 }}>Studios</h2>
-              <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>
-                {studios.length} saved studio(s)
+          <section className="library-panel">
+            <div className="library-panel__header">
+              <div>
+                <h2 className="library-panel__heading">Studios</h2>
+                <p className="library-panel__hint">
+                  Open a session to match tracks to video
+                </p>
               </div>
+              <button className="btn btn--primary" onClick={handleCreateStudio}>
+                + Create studio
+              </button>
             </div>
 
-            <button
-              onClick={handleCreateStudio}
-              style={{
-                background: "#1f2937",
-                color: "white",
-                border: "1px solid #374151",
-                borderRadius: 10,
-                padding: "10px 12px",
-                cursor: "pointer",
-              }}
-            >
-              + Create Studio
-            </button>
-          </div>
-
-          <div style={{ minHeight: 0, flex: 1, overflow: "hidden" }}>
-            {loadingStudios ? (
-              <LoadingState label="Loading studios..." />
-            ) : (
-              <StudioSidebar
-                studios={studios}
-                selectedStudioId={selectedStudioId}
-                onSelectStudio={handleSelectStudio}
-                onStudioContextMenu={openStudioContextMenu}
-              />
-            )}
-          </div>
+            <div className="library-panel__content">
+              {loadingStudios ? (
+                <LoadingState label="Loading studios…" />
+              ) : (
+                <StudioSidebar
+                  studios={studios}
+                  selectedStudioId={selectedStudioId}
+                  onSelectStudio={handleSelectStudio}
+                  onStudioContextMenu={openStudioContextMenu}
+                />
+              )}
+            </div>
+          </section>
         </div>
       </div>
+
+      <footer className="library-statusbar">
+        <div>
+          {error ? (
+            <span className="library-statusbar__message library-statusbar__message--error">
+              {error}
+            </span>
+          ) : uploading ? (
+            <span className="library-statusbar__message library-statusbar__message--warn">
+              Uploading and waiting for backend analysis…
+            </span>
+          ) : status ? (
+            <span className="library-statusbar__message">{status}</span>
+          ) : (
+            <span>Ready</span>
+          )}
+        </div>
+        <span>Right-click items to delete · Click studio to open</span>
+      </footer>
 
       <ContextMenu
         open={contextMenu.open}

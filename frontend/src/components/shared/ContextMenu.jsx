@@ -31,42 +31,18 @@ export default function ContextMenu({
 
   return (
     <div
+      className="context-menu"
       onMouseDown={(e) => e.stopPropagation()}
-      style={{
-        position: "fixed",
-        left: x,
-        top: y,
-        minWidth: 180,
-        background: "#111827",
-        color: "white",
-        border: "1px solid #374151",
-        borderRadius: 10,
-        boxShadow: "0 12px 30px rgba(0,0,0,0.45)",
-        zIndex: 2000,
-        overflow: "hidden",
-      }}
+      style={{ left: x, top: y }}
     >
       {items.map((item, index) => (
         <button
           key={index}
+          type="button"
+          className={`context-menu__item${item.danger ? " context-menu__item--danger" : ""}`}
           onClick={() => {
             item.onClick?.();
             onClose?.();
-          }}
-          style={{
-            width: "100%",
-            textAlign: "left",
-            background: "transparent",
-            color: item.danger ? "#fca5a5" : "white",
-            border: "none",
-            padding: "10px 12px",
-            cursor: "pointer",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#1f2937";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
           }}
         >
           {item.label}

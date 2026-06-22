@@ -62,9 +62,7 @@ class StudioService:
         """
         Save the query spec for a studio session.
         """
-        session = self.studio_store.load_session(studio_id)
-        session.query = query
-        self.studio_store.save_session(session)
+        self.studio_store.save_query(studio_id, query)
     
     def load_alignment(self, studio_id: str) -> AlignmentSpec:
         """
@@ -79,9 +77,7 @@ class StudioService:
         """
         Save the alignment spec for a studio session.
         """
-        session = self.studio_store.load_session(studio_id)
-        session.alignment = alignment
-        self.studio_store.save_session(session)
+        self.studio_store.save_alignment(studio_id, alignment)
 
     def render_audio_for_studio(self, studio_id: str) -> Path:
         """Ensure audio exists for the studio alignment and return path."""
@@ -92,14 +88,14 @@ class StudioService:
         session = self.studio_store.load_session(studio_id)
         session.meta.video_path = video_path
         session.meta.source = "video"
-        self.studio_store.save_session(session)
+        self.studio_store.save_meta(studio_id, session.meta)
 
     def update_metadata(self, studio_id: str, meta) -> None:
         session = self.studio_store.load_session(studio_id)
         session.meta.source = meta.source
         session.meta.video_path = meta.video_path
         session.meta.notes = meta.notes
-        self.studio_store.save_session(session)
+        self.studio_store.save_meta(studio_id, session.meta)
 
     def run_optimizer(self, studio_id: str) -> AlignmentSpec:
         """

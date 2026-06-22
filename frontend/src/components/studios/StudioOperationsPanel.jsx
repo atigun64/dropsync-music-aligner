@@ -16,129 +16,105 @@ export default function StudioOperationsPanel({
   runningOptimizer = false,
   downloadingAudio = false,
 }) {
+  const locked = runningOptimizer;
+
   return (
-    <div
-      style={{
-        padding: 12,
-        borderRight: "1px solid #1f2937",
-        background: "#0f172a",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        minHeight: 0,
-        overflowY: "auto",
-      }}
-    >
+    <aside className={`studio-ops${locked ? " studio-ops--locked" : ""}`}>
       <div>
-        <h2 style={{ margin: 0 }}>Operations</h2>
-        <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>
-          Studio: <b>{studioId}</b>
-        </div>
+        <h2 className="studio-ops__title">Studio</h2>
+        <p className="studio-ops__meta" style={{ marginTop: 6 }}>
+          Session <b>#{studioId}</b>
+        </p>
       </div>
 
-      <button onClick={onImportVideo} style={buttonStyle}>
-        {uploadingVideo ? "Uploading..." : "Import video"}
-      </button>
+      <div className="studio-ops__divider" />
 
-      <button onClick={onRemoveVideo} style={buttonStyle}>
-        Remove video
-      </button>
+      <div className="studio-ops__section">
+        <div className="studio-ops__section-label">Media</div>
+        <button
+          className="btn btn--primary"
+          onClick={onImportVideo}
+          disabled={locked || uploadingVideo}
+        >
+          {uploadingVideo ? "Uploading…" : "Import video"}
+        </button>
+        <button className="btn" onClick={onRemoveVideo} disabled={locked}>
+          Remove video
+        </button>
+      </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <label style={{ fontSize: 13, color: "#cbd5e1" }}>
-          Studio length (seconds)
-        </label>
+      <div className="studio-ops__divider" />
+
+      <div className="studio-ops__section">
+        <div className="studio-ops__section-label">Timeline length</div>
 
         {canEditLength ? (
           <>
             <input
+              className="input"
               type="number"
               min={videoDuration > 0 ? videoDuration : 0}
               step="0.1"
               value={studioLength}
               onChange={(e) => onStudioLengthChange?.(e.target.value)}
-              style={inputStyle}
               placeholder="e.g. 120"
+              disabled={locked}
             />
             <button
+              className="btn"
               onClick={onSaveLength}
-              style={buttonStyle}
-              disabled={savingQuery}
+              disabled={locked || savingQuery}
             >
-              {savingQuery ? "Saving..." : "Save length"}
+              {savingQuery ? "Saving…" : "Save length"}
             </button>
           </>
         ) : (
-          <div
-            style={{
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #374151",
-              background: "#111827",
-              color: "#e5e7eb",
-            }}
-          >
-            Auto from video:{" "}
-            <b>
+          <div className="studio-ops__stat">
+            <span>From video</span>
+            <span className="studio-ops__stat-value">
               {videoDuration > 0
                 ? `${videoDuration.toFixed(1)}s`
                 : `${Number(queryLength || 0).toFixed(1)}s`}
-            </b>
+            </span>
           </div>
         )}
 
-        <div style={{ color: "#94a3b8", fontSize: 12 }}>
-          Current query length: <b>{Number(queryLength || 0).toFixed(1)}s</b>
+        <div className="studio-ops__stat">
+          <span>Query</span>
+          <span className="studio-ops__stat-value">
+            {Number(queryLength || 0).toFixed(1)}s
+          </span>
         </div>
-
-        <div style={{ color: "#94a3b8", fontSize: 12 }}>
-          Video length:{" "}
-          <b>{videoDuration > 0 ? `${videoDuration.toFixed(1)}s` : "n/a"}</b>
+        <div className="studio-ops__stat">
+          <span>Video</span>
+          <span className="studio-ops__stat-value">
+            {videoDuration > 0 ? `${videoDuration.toFixed(1)}s` : "—"}
+          </span>
         </div>
       </div>
 
-      <button
-        onClick={onClearAnnotations}
-        style={buttonStyle}
-        disabled={runningOptimizer}
-      >
-        Clear annotations
-      </button>
+      <div className="studio-ops__divider" />
 
-      <button
-        onClick={onRunOptimizer}
-        style={buttonStyle}
-        disabled={runningOptimizer}
-      >
-        {runningOptimizer ? "Running..." : "Run optimization"}
-      </button>
-
-      <button
-        onClick={onDownloadAudio}
-        style={buttonStyle}
-        disabled={downloadingAudio}
-      >
-        {downloadingAudio ? "Downloading..." : "Download song"}
-      </button>
-    </div>
+      <div className="studio-ops__section">
+        <div className="studio-ops__section-label">Workflow</div>
+        <button className="btn" onClick={onClearAnnotations} disabled={locked}>
+          Clear annotations
+        </button>
+        <button
+          className="btn btn--primary"
+          onClick={onRunOptimizer}
+          disabled={locked}
+        >
+          {locked ? "Running…" : "Run optimization"}
+        </button>
+        <button
+          className="btn"
+          onClick={onDownloadAudio}
+          disabled={locked || downloadingAudio}
+        >
+          {downloadingAudio ? "Downloading…" : "Download song"}
+        </button>
+      </div>
+    </aside>
   );
 }
-
-const buttonStyle = {
-  background: "#111827",
-  color: "white",
-  border: "1px solid #374151",
-  borderRadius: 10,
-  padding: "10px 12px",
-  cursor: "pointer",
-  textAlign: "center",
-};
-
-const inputStyle = {
-  background: "#111827",
-  color: "white",
-  border: "1px solid #374151",
-  borderRadius: 10,
-  padding: "10px 12px",
-  outline: "none",
-};

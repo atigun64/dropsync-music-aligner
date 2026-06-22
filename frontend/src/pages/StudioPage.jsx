@@ -15,11 +15,20 @@ import {
 } from "../api/studios";
 
 import { normalizeStudioSession, createQuerySpec } from "../schemas/studio";
+import { normalizeTrackRecord } from "../schemas/track";
 
 import LoadingState from "../components/shared/LoadingState";
+import { useAppDialog } from "../components/shared/AppDialogProvider";
 import StudioOperationsPanel from "../components/studios/StudioOperationsPanel";
 import StudioVideoPanel from "../components/studios/StudioVideoPanel";
 import StudioTracker from "../components/studios/StudioTracker";
+import {
+  clampTime,
+  correctAudioDrift,
+  playMediaSynced,
+  seekMediaSynced,
+} from "../utils/mediaTransport";
+import { formatTimePrecise } from "../utils/formatTime";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -28,6 +37,7 @@ function clamp(value, min, max) {
 export default function StudioPage() {
   const { studioId } = useParams();
   const navigate = useNavigate();
+  const { prompt, confirm } = useAppDialog();
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -38,7 +48,9 @@ export default function StudioPage() {
     timelineTime: 0,
   });
 
-  const pendingSeekRef = useRef(null);
+  const timelineTimeRef = useRef(0);
+  const seekPromiseRef = useRef(Promise.resolve());
+  const isSeekingRef = useRef(false);
   const rafRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
@@ -59,7 +71,7 @@ export default function StudioPage() {
   const [isPlaying, setIsPlaying] = useState(false);
 
   const [videoToken, setVideoToken] = useState(0);
-  const [trackLengthsById, setTrackLengthsById] = useState({});
+  const [trackMetaById, setTrackMetaById] = useState({});
 
   const [audioStatus, setAudioStatus] = useState("none"); // none | loading | ready | error
   const [audioError, setAudioError] = useState("");
@@ -73,6 +85,11 @@ export default function StudioPage() {
   const audioLoadPromiseRef = useRef(null);
   const videoBlobUrlRef = useRef("");
   const videoLoadPromiseRef = useRef(null);
+  const togglePlayRef = useRef(() => {});
+  const commitSeekRef = useRef(() => {});
+  const timelineLengthRef = useRef(1);
+  const isPlayingRef = useRef(false);
+  const runningOptimizerRef = useRef(false);
 
   const query = session?.query ?? null;
   const alignment = session?.alignment ?? null;
@@ -92,6 +109,12 @@ export default function StudioPage() {
     if (!hasAudio || audioStatus !== "ready") return "";
     return audioUrl;
   }, [hasAudio, audioStatus, audioUrl]);
+
+  function setTimelineTime(time) {
+    const next = clamp(time, 0, timelineLength);
+    timelineTimeRef.current = next;
+    setCurrentTime(next);
+  }
 
   async function saveAlignment(nextAlignment) {
     const updated = await updateStudioAlignment(studioId, nextAlignment);
@@ -154,23 +177,29 @@ export default function StudioPage() {
       setStatus("");
     }
   }
-  async function loadSession() {
+  function applySession(raw) {
+    const normalized = normalizeStudioSession(raw);
+    setSession(normalized);
+
+    const length = normalized.query?.length_seconds ?? 0;
+    setStudioLength(String(length || ""));
+
+    if (!normalized.meta?.video_path) {
+      setVideoDuration(0);
+    }
+
+    return normalized;
+  }
+
+  async function loadSession({ invalidateAudio = true, invalidateVideo = true } = {}) {
     setLoading(true);
     setError("");
-    invalidateStudioAudio();
-    invalidateStudioVideo();
+    if (invalidateAudio) invalidateStudioAudio();
+    if (invalidateVideo) invalidateStudioVideo();
 
     try {
       const raw = await getStudioSession(studioId);
-      const normalized = normalizeStudioSession(raw);
-      setSession(normalized);
-
-      const length = normalized.query?.length_seconds ?? 0;
-      setStudioLength(String(length || ""));
-
-          if (!normalized.meta?.video_path) {
-        setVideoDuration(0);
-      }
+      applySession(raw);
     } catch (e) {
       setError(e.message || "Failed to load studio session");
       setSession(null);
@@ -300,39 +329,6 @@ export default function StudioPage() {
     return promise;
   }
 
-  async function playMedia() {
-    if (alignmentTracks.length > 0) {
-      const ok = await ensureStudioAudioLoaded();
-      if (!ok) return;
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-
-    if (hasVideo && videoStatus !== "ready") {
-      const ok = await ensureStudioVideoLoaded();
-      if (!ok) return;
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-    }
-
-    const actions = [];
-
-    if (hasVideo && videoRef.current) {
-      actions.push(videoRef.current.play());
-    }
-
-    if (alignmentTracks.length > 0 && audioRef.current) {
-      actions.push(audioRef.current.play());
-    }
-
-    if (actions.length === 0) {
-      setIsPlaying(true);
-      return;
-    }
-
-    const results = await Promise.allSettled(actions);
-    const anyPlayed = results.some((r) => r.status === "fulfilled");
-    setIsPlaying(anyPlayed);
-  }
-
   useEffect(() => {
     loadSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -368,9 +364,9 @@ export default function StudioPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadTrackLengths() {
+    async function loadTrackMeta() {
       if (!alignmentTracks.length) {
-        setTrackLengthsById({});
+        setTrackMetaById({});
         return;
       }
 
@@ -378,25 +374,31 @@ export default function StudioPage() {
         const entries = await Promise.all(
           alignmentTracks.map(async (t) => {
             try {
-              const track = await getTrack(t.track_id);
-              return [t.track_id, Number(track?.meta?.length_seconds || 0)];
+              const track = normalizeTrackRecord(await getTrack(t.track_id));
+              return [
+                t.track_id,
+                {
+                  length_seconds: Number(track.meta?.length_seconds || 0),
+                  annotations: track.annotations ?? [],
+                },
+              ];
             } catch {
-              return [t.track_id, 0];
+              return [t.track_id, { length_seconds: 0, annotations: [] }];
             }
           })
         );
 
         if (!cancelled) {
-          setTrackLengthsById(Object.fromEntries(entries));
+          setTrackMetaById(Object.fromEntries(entries));
         }
       } catch {
         if (!cancelled) {
-          setTrackLengthsById({});
+          setTrackMetaById({});
         }
       }
     }
 
-    loadTrackLengths();
+    loadTrackMeta();
 
     return () => {
       cancelled = true;
@@ -418,7 +420,7 @@ export default function StudioPage() {
 
     transportRef.current = {
       wallTime: performance.now(),
-      timelineTime: currentTime,
+      timelineTime: timelineTimeRef.current,
     };
 
     const tick = (now) => {
@@ -426,7 +428,7 @@ export default function StudioPage() {
       const elapsed = (now - wallTime) / 1000;
 
       const nextTime = clamp(timelineTime + elapsed, 0, timelineLength);
-      setCurrentTime(nextTime);
+      setTimelineTime(nextTime);
 
       if (nextTime >= timelineLength) {
         setIsPlaying(false);
@@ -444,30 +446,7 @@ export default function StudioPage() {
         rafRef.current = null;
       }
     };
-  }, [isPlaying, timelineLength, hasMedia, currentTime]);
-
-  useEffect(() => {
-    if (!isPlaying) return;
-
-    if (hasVideo && videoRef.current && videoRef.current.paused) {
-      videoRef.current.play().catch((err) => {
-        console.error("Failed to play video:", err);
-        setIsPlaying(false);
-      });
-    }
-
-    if (
-      alignmentTracks.length > 0 &&
-      audioStatus === "ready" &&
-      audioRef.current &&
-      audioRef.current.paused
-    ) {
-      audioRef.current.play().catch((err) => {
-        console.error("Failed to play studio audio:", err);
-        setIsPlaying(false);
-      });
-    }
-  }, [isPlaying, hasVideo, alignmentTracks.length, audioStatus, audioUrl]);
+  }, [isPlaying, timelineLength, hasMedia]);
 
   function pausePlayback() {
     setIsPlaying(false);
@@ -487,48 +466,44 @@ export default function StudioPage() {
   }
 
   async function playMedia() {
+    try {
+      await seekPromiseRef.current;
+    } catch {
+      // ignore failed background seek
+    }
+
     if (alignmentTracks.length > 0) {
       const ok = await ensureStudioAudioLoaded();
       if (!ok) return;
-
-      // give React a frame to mount the audio element
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
 
-    if (videoRef.current) {
+    if (hasVideo) {
+      const ok = await ensureStudioVideoLoaded();
+      if (!ok) return;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+
+    if (hasMedia) {
+      isSeekingRef.current = true;
+
       try {
-        videoRef.current.currentTime = currentTime;
-      } catch {
-        // ignore
+        const played = await playMediaSynced({
+          videoEl: videoRef.current,
+          audioEl: audioRef.current,
+          timeSeconds: timelineTimeRef.current,
+          hasVideo,
+        });
+
+        setIsPlaying(played);
+      } finally {
+        isSeekingRef.current = false;
       }
-    }
 
-    if (audioRef.current) {
-      try {
-        audioRef.current.currentTime = currentTime;
-      } catch {
-        // ignore
-      }
-    }
-
-    const actions = [];
-
-    if (hasVideo && videoRef.current) {
-      actions.push(videoRef.current.play());
-    }
-
-    if (alignmentTracks.length > 0 && audioRef.current) {
-      actions.push(audioRef.current.play());
-    }
-
-    if (actions.length === 0) {
-      setIsPlaying(true);
       return;
     }
 
-    const results = await Promise.allSettled(actions);
-    const anyPlayed = results.some((r) => r.status === "fulfilled");
-    setIsPlaying(anyPlayed);
+    setIsPlaying(true);
   }
 
   function togglePlay() {
@@ -540,39 +515,119 @@ export default function StudioPage() {
     void playMedia();
   }
 
+  togglePlayRef.current = togglePlay;
+
   // Commit a seek once dragging ends.
-  function commitSeek(targetTime) {
-    const next = clamp(targetTime, 0, timelineLength);
+  function commitSeek(targetTime, { resume } = {}) {
+    const shouldResume = resume ?? isPlaying;
+    pausePlayback();
 
-    // Remember we're waiting for media to catch up
-    pendingSeekRef.current = next;
+    const next = clampTime(targetTime, 0, timelineLength);
+    setTimelineTime(next);
 
-    // Move tracker immediately
-    setCurrentTime(next);
-
-    if (videoRef.current) {
-      try {
-        videoRef.current.currentTime = next;
-      } catch {
-        // ignore
+    if (!hasMedia) {
+      if (shouldResume) {
+        transportRef.current = {
+          wallTime: performance.now(),
+          timelineTime: next,
+        };
+        setIsPlaying(true);
       }
+      return;
     }
 
-    if (audioRef.current) {
+    const seekTask = (async () => {
+      isSeekingRef.current = true;
+
       try {
-        audioRef.current.currentTime = next;
-      } catch {
-        // ignore
-      }
-    }
+        if (alignmentTracks.length > 0) {
+          const audioReady = await ensureStudioAudioLoaded();
+          if (!audioReady) return;
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
 
-    if (!hasMedia && isPlaying) {
-      transportRef.current = {
-        wallTime: performance.now(),
-        timelineTime: next,
-      };
-    }
+        if (hasVideo) {
+          const videoReady = await ensureStudioVideoLoaded();
+          if (!videoReady) return;
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+
+        const settledTime = await seekMediaSynced({
+          videoEl: videoRef.current,
+          audioEl: audioRef.current,
+          timeSeconds: next,
+          hasVideo,
+        });
+
+        setTimelineTime(settledTime);
+
+        if (shouldResume) {
+          const played = await playMediaSynced({
+            videoEl: videoRef.current,
+            audioEl: audioRef.current,
+            timeSeconds: timelineTimeRef.current,
+            hasVideo,
+          });
+          setIsPlaying(played);
+        }
+      } finally {
+        isSeekingRef.current = false;
+      }
+    })();
+
+    seekPromiseRef.current = seekTask;
+    void seekTask.catch(() => {
+      // seek errors are non-fatal; UI already shows target position
+    });
   }
+
+  timelineLengthRef.current = timelineLength;
+  isPlayingRef.current = isPlaying;
+  runningOptimizerRef.current = runningOptimizer;
+  commitSeekRef.current = commitSeek;
+
+  useEffect(() => {
+    const SEEK_STEP_SECONDS = 10;
+
+    function isEditableTarget(target) {
+      if (!(target instanceof HTMLElement)) return false;
+      if (target.isContentEditable) return true;
+      const tag = target.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    }
+
+    function handleKeyDown(e) {
+      if (runningOptimizerRef.current) return;
+      if (isEditableTarget(e.target)) return;
+
+      if (e.code === "Space") {
+        if (e.repeat) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        togglePlayRef.current();
+        return;
+      }
+
+      if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const delta =
+          e.code === "ArrowRight" ? SEEK_STEP_SECONDS : -SEEK_STEP_SECONDS;
+        const next = clampTime(
+          timelineTimeRef.current + delta,
+          0,
+          timelineLengthRef.current
+        );
+
+        commitSeekRef.current(next, { resume: isPlayingRef.current });
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, []);
 
   function handleVideoLoadedMetadata() {
     const video = videoRef.current;
@@ -587,19 +642,13 @@ export default function StudioPage() {
 
   function handleVideoTimeUpdate() {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || isSeekingRef.current) return;
 
-    const pending = pendingSeekRef.current;
-
-    if (pending !== null) {
-      if (Math.abs(video.currentTime - pending) < 0.25) {
-        pendingSeekRef.current = null;
-        setCurrentTime(video.currentTime || 0);
-      }
-      return;
+    if (hasAudio && audioRef.current && !video.paused) {
+      correctAudioDrift(video, audioRef.current);
     }
 
-    setCurrentTime(video.currentTime || 0);
+    setTimelineTime(video.currentTime || 0);
   }
 
   function handleAudioLoadedMetadata() {
@@ -613,22 +662,12 @@ export default function StudioPage() {
   }
 
   function handleAudioTimeUpdate() {
+    if (hasVideo || isSeekingRef.current) return;
+
     const audio = audioRef.current;
     if (!audio) return;
 
-    const pending = pendingSeekRef.current;
-
-    if (pending !== null) {
-      if (Math.abs(audio.currentTime - pending) < 0.25) {
-        pendingSeekRef.current = null;
-        setCurrentTime(audio.currentTime || 0);
-      }
-      return;
-    }
-
-    if (!hasVideo) {
-      setCurrentTime(audio.currentTime || 0);
-    }
+    setTimelineTime(audio.currentTime || 0);
   }
 
   async function autoAssignStudioLength(length) {
@@ -655,9 +694,8 @@ export default function StudioPage() {
           requested_points: [],
         });
 
-      await updateStudioQuery(studioId, nextQuery);
-      const raw = await getStudioSession(studioId);
-      setSession(normalizeStudioSession(raw));
+      const raw = await updateStudioQuery(studioId, nextQuery);
+      applySession(raw);
       setStudioLength(String(nextLength));
     } catch (e) {
       setError(e.message || "Failed to auto-save studio length");
@@ -699,7 +737,12 @@ export default function StudioPage() {
   }
 
   async function handleRemoveVideo() {
-    const ok = window.confirm("Remove the current video from this studio?");
+    const ok = await confirm({
+      title: "Remove video",
+      message: "Remove the current video from this studio?",
+      confirmLabel: "Remove",
+      danger: true,
+    });
     if (!ok) return;
 
     setStatus("Removing video...");
@@ -756,8 +799,8 @@ export default function StudioPage() {
           requested_points: [],
         });
 
-      await updateStudioQuery(studioId, nextQuery);
-      await loadSession();
+      const raw = await updateStudioQuery(studioId, nextQuery);
+      applySession(raw);
 
       setStatus("Studio length saved");
       setTimeout(() => setStatus(""), 1200);
@@ -770,7 +813,12 @@ export default function StudioPage() {
   }
 
   async function handleClearAnnotations() {
-    const ok = window.confirm("Clear all requested annotations?");
+    const ok = await confirm({
+      title: "Clear annotations",
+      message: "Clear all requested annotations from this studio?",
+      confirmLabel: "Clear",
+      danger: true,
+    });
     if (!ok) return;
 
     try {
@@ -788,8 +836,8 @@ export default function StudioPage() {
           requested_points: [],
         });
 
-      await updateStudioQuery(studioId, nextQuery);
-      await loadSession();
+      const raw = await updateStudioQuery(studioId, nextQuery);
+      applySession(raw);
 
       setStatus("Annotations cleared");
       setTimeout(() => setStatus(""), 1200);
@@ -800,6 +848,9 @@ export default function StudioPage() {
   }
 
   async function handleRunOptimizer() {
+    if (runningOptimizer) return;
+
+    pausePlayback();
     setRunningOptimizer(true);
     setStatus("Running optimizer...");
     setError("");
@@ -807,7 +858,7 @@ export default function StudioPage() {
     try {
       await runOptimizer(studioId);
       invalidateStudioAudio();
-      await loadSession();
+      await loadSession({ invalidateVideo: false });
 
       setStatus("Optimization complete");
       setTimeout(() => setStatus(""), 1200);
@@ -848,20 +899,32 @@ export default function StudioPage() {
   }
 
   async function handleAddAnnotation(timeSeconds) {
-    const label = window.prompt("Annotation label?", "drop");
-    if (label === null) return;
+    const result = await prompt({
+      title: "Add annotation",
+      submitLabel: "Add",
+      fields: [
+        { key: "label", label: "Label", defaultValue: "drop" },
+        {
+          key: "strength",
+          label: "Strength (0 to 1)",
+          type: "number",
+          defaultValue: "1",
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+      ],
+    });
+    if (!result) return;
 
-    const strengthRaw = window.prompt("Strength (0 to 1)?", "1");
-    if (strengthRaw === null) return;
-
-    const strength = Number(strengthRaw);
+    const strength = Number(result.strength);
     if (!Number.isFinite(strength)) {
       setError("Strength must be a number");
       return;
     }
 
     const nextPoint = {
-      label,
+      label: result.label,
       time_seconds: clamp(Number(timeSeconds || currentTime), 0, timelineLength),
       strength,
     };
@@ -883,8 +946,8 @@ export default function StudioPage() {
       setStatus("Saving annotation...");
       setError("");
 
-      await updateStudioQuery(studioId, nextQuery);
-      await loadSession();
+      const raw = await updateStudioQuery(studioId, nextQuery);
+      applySession(raw);
 
       setStatus("Annotation saved");
       setTimeout(() => setStatus(""), 1200);
@@ -898,23 +961,34 @@ export default function StudioPage() {
     const ann = requestedPoints[index];
     if (!ann) return;
 
-    const label = window.prompt("Edit label", ann.label);
-    if (label === null) return;
+    const result = await prompt({
+      title: "Edit annotation",
+      submitLabel: "Save",
+      fields: [
+        { key: "label", label: "Label", defaultValue: ann.label },
+        {
+          key: "time_seconds",
+          label: "Time (seconds)",
+          type: "number",
+          defaultValue: String(Number(ann.time_seconds ?? 0)),
+          min: 0,
+          step: 0.01,
+        },
+        {
+          key: "strength",
+          label: "Strength (0 to 1)",
+          type: "number",
+          defaultValue: String(Number(ann.strength ?? 1)),
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+      ],
+    });
+    if (!result) return;
 
-    const timeRaw = window.prompt(
-      "Edit time (seconds)",
-      String(Number(ann.time_seconds ?? 0))
-    );
-    if (timeRaw === null) return;
-
-    const strengthRaw = window.prompt(
-      "Edit strength",
-      String(Number(ann.strength ?? 1))
-    );
-    if (strengthRaw === null) return;
-
-    const timeSeconds = Number(timeRaw);
-    const strength = Number(strengthRaw);
+    const timeSeconds = Number(result.time_seconds);
+    const strength = Number(result.strength);
 
     if (!Number.isFinite(timeSeconds) || !Number.isFinite(strength)) {
       setError("Time and strength must be numbers");
@@ -925,7 +999,7 @@ export default function StudioPage() {
       i === index
         ? {
           ...p,
-          label,
+          label: result.label,
           time_seconds: clamp(timeSeconds, 0, timelineLength),
           strength,
         }
@@ -947,8 +1021,8 @@ export default function StudioPage() {
       setStatus("Saving annotation...");
       setError("");
 
-      await updateStudioQuery(studioId, nextQuery);
-      await loadSession();
+      const raw = await updateStudioQuery(studioId, nextQuery);
+      applySession(raw);
 
       setStatus("Annotation updated");
       setTimeout(() => setStatus(""), 1200);
@@ -976,8 +1050,8 @@ export default function StudioPage() {
       setStatus("Deleting annotation...");
       setError("");
 
-      await updateStudioQuery(studioId, nextQuery);
-      await loadSession();
+      const raw = await updateStudioQuery(studioId, nextQuery);
+      applySession(raw);
 
       setStatus("Annotation removed");
       setTimeout(() => setStatus(""), 1200);
@@ -992,17 +1066,7 @@ export default function StudioPage() {
   }
 
   return (
-    <div
-      style={{
-        height: "100vh",
-        overflow: "hidden",
-        background: "#0f1115",
-        color: "#e5e7eb",
-        display: "grid",
-        gridTemplateRows: "minmax(320px, 44vh) 1fr",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
+    <div className="studio-page" aria-busy={runningOptimizer}>
       <input
         ref={videoInputRef}
         type="file"
@@ -1022,157 +1086,142 @@ export default function StudioPage() {
         />
       )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "320px 1fr",
-          minHeight: 0,
-          overflow: "hidden",
-          borderBottom: "1px solid #1f2937",
-        }}
-      >
-        <StudioOperationsPanel
-          studioId={studioId}
-          canEditLength={!hasVideo}
-          studioLength={studioLength}
-          onStudioLengthChange={setStudioLength}
-          onSaveLength={handleSaveLengthManual}
-          onImportVideo={handleImportVideoClick}
-          onRemoveVideo={handleRemoveVideo}
-          onClearAnnotations={handleClearAnnotations}
-          onRunOptimizer={handleRunOptimizer}
-          onDownloadAudio={handleDownloadAudio}
-          videoDuration={videoDuration}
-          queryLength={query?.length_seconds ?? 0}
-          savingQuery={savingQuery}
-          uploadingVideo={uploadingVideo}
-          runningOptimizer={runningOptimizer}
-          downloadingAudio={downloadingAudio}
-        />
-
-        <StudioVideoPanel
-          studioId={studioId}
-          hasVideo={hasVideo}
-          videoToken={videoToken}
-          videoRef={videoRef}
-          videoSrc={videoUrl}
-          onLoadedMetadata={handleVideoLoadedMetadata}
-          onTimeUpdate={handleVideoTimeUpdate}
-        />
-      </div>
-
-      <div
-        style={{
-          minHeight: 0,
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-          padding: 16,
-          gap: 12,
-        }}
-      >
-        <StudioTracker
-          timelineLength={timelineLength}
-          currentTime={currentTime}
-          isPlaying={isPlaying}
-          onSeekCommit={commitSeek}
-          onTogglePlay={togglePlay}
-          onPausePlayback={pausePlayback}
-          onAddAnnotation={handleAddAnnotation}
-          onEditAnnotation={handleEditAnnotation}
-          onDeleteAnnotation={handleDeleteAnnotation}
-          requestedPoints={requestedPoints}
-          alignmentTracks={alignmentTracks}
-          trackLengthsById={trackLengthsById}
-          onMoveAlignmentBlock={handleMoveAlignmentBlock}
-          onChangeAlignmentBlockSpeed={handleChangeAlignmentBlockSpeed}
-        />
-
-
-
-
-        {loading && <LoadingState label="Loading studio..." />}
-        {status && <div style={{ color: "#93c5fd", fontSize: 13 }}>{status}</div>}
-        {error && <div style={{ color: "#fca5a5", fontSize: 13 }}>{error}</div>}
-        {alignmentTracks.length === 0 && (
-          <div style={{ color: "#64748b", fontSize: 13 }}>
-            No studio audio yet. Run optimization to generate it.
-          </div>
-        )}
-
-        <button
-          onClick={() => navigate("/")}
-          style={{
-            alignSelf: "flex-end",
-            background: "#111827",
-            color: "white",
-            border: "1px solid #374151",
-            borderRadius: 10,
-            padding: "10px 12px",
-            cursor: "pointer",
-          }}
-        >
-          ← Back
-        </button>
-      </div>
-
-      {audioStatus === "loading" && alignmentTracks.length > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            pointerEvents: "all",
-          }}
-        >
-          <div
-            style={{
-              background: "#111827",
-              border: "1px solid #374151",
-              borderRadius: 14,
-              padding: "18px 22px",
-              color: "white",
-              minWidth: 260,
-              textAlign: "center",
-            }}
+      <header className="studio-header">
+        <div className="studio-header__left">
+          <button
+            className="btn btn--ghost"
+            onClick={() => navigate("/")}
+            disabled={runningOptimizer}
           >
-            <div style={{ fontSize: 16, marginBottom: 8 }}>Rendering studio audio...</div>
-            <div style={{ fontSize: 13, color: "#9ca3af" }}>
-              This may take a few seconds.
+            ← Library
+          </button>
+          <div>
+            <h1 className="studio-title">Studio #{studioId}</h1>
+            <p className="studio-subtitle">
+              {alignmentTracks.length > 0
+                ? `${alignmentTracks.length} track${alignmentTracks.length === 1 ? "" : "s"} · ${requestedPoints.length} annotation${requestedPoints.length === 1 ? "" : "s"}`
+                : "No alignment yet — run optimization to generate audio"}
+            </p>
+          </div>
+        </div>
+
+        <div className="studio-timecode" aria-live="polite">
+          {formatTimePrecise(currentTime)}
+          <span className="studio-timecode__sep">/</span>
+          <span className="studio-timecode__total">
+            {formatTimePrecise(timelineLength)}
+          </span>
+        </div>
+      </header>
+
+      <div className="studio-workspace">
+        <div className="studio-preview-row">
+          <StudioOperationsPanel
+            studioId={studioId}
+            canEditLength={!hasVideo}
+            studioLength={studioLength}
+            onStudioLengthChange={setStudioLength}
+            onSaveLength={handleSaveLengthManual}
+            onImportVideo={handleImportVideoClick}
+            onRemoveVideo={handleRemoveVideo}
+            onClearAnnotations={handleClearAnnotations}
+            onRunOptimizer={handleRunOptimizer}
+            onDownloadAudio={handleDownloadAudio}
+            videoDuration={videoDuration}
+            queryLength={query?.length_seconds ?? 0}
+            savingQuery={savingQuery}
+            uploadingVideo={uploadingVideo}
+            runningOptimizer={runningOptimizer}
+            downloadingAudio={downloadingAudio}
+          />
+
+          <StudioVideoPanel
+            studioId={studioId}
+            hasVideo={hasVideo}
+            videoToken={videoToken}
+            videoRef={videoRef}
+            videoSrc={videoUrl}
+            onLoadedMetadata={handleVideoLoadedMetadata}
+            onTimeUpdate={handleVideoTimeUpdate}
+          />
+        </div>
+
+        <div className="studio-timeline-row">
+          {loading ? (
+            <LoadingState label="Loading studio…" />
+          ) : (
+            <StudioTracker
+              timelineLength={timelineLength}
+              currentTime={currentTime}
+              isPlaying={isPlaying}
+              interactionLocked={runningOptimizer}
+              onSeekCommit={commitSeek}
+              onTogglePlay={togglePlay}
+              onPausePlayback={pausePlayback}
+              onAddAnnotation={handleAddAnnotation}
+              onEditAnnotation={handleEditAnnotation}
+              onDeleteAnnotation={handleDeleteAnnotation}
+              requestedPoints={requestedPoints}
+              alignmentTracks={alignmentTracks}
+              trackMetaById={trackMetaById}
+              onMoveAlignmentBlock={handleMoveAlignmentBlock}
+              onChangeAlignmentBlockSpeed={handleChangeAlignmentBlockSpeed}
+            />
+          )}
+        </div>
+      </div>
+
+      <footer className="studio-statusbar">
+        <div>
+          {error ? (
+            <span className="studio-statusbar__message studio-statusbar__message--error">
+              {error}
+            </span>
+          ) : runningOptimizer ? (
+            <span className="studio-statusbar__message">Running optimizer…</span>
+          ) : status ? (
+            <span className="studio-statusbar__message">{status}</span>
+          ) : (
+            <span>
+              {isPlaying ? "Playing" : "Paused"}
+              {hasVideo ? " · Video" : ""}
+              {hasAudio ? " · Audio" : ""}
+            </span>
+          )}
+        </div>
+        <span className="studio-statusbar__hint">
+          Right-click blocks to change speed · Right-click markers to delete
+        </span>
+      </footer>
+
+      {runningOptimizer && (
+        <div className="studio-overlay studio-overlay--optimizer">
+          <div className="studio-overlay__card">
+            <div className="studio-overlay__spinner" />
+            <div className="studio-overlay__title">Running optimization</div>
+            <div className="studio-overlay__body">
+              The optimizer is working through track combinations. This can take a
+              while — please wait and avoid other actions until it finishes.
             </div>
           </div>
         </div>
       )}
 
+      {audioStatus === "loading" && alignmentTracks.length > 0 && !runningOptimizer && (
+        <div className="studio-overlay">
+          <div className="studio-overlay__card">
+            <div className="studio-overlay__spinner" />
+            <div className="studio-overlay__title">Rendering studio audio</div>
+            <div className="studio-overlay__body">This may take a few seconds.</div>
+          </div>
+        </div>
+      )}
+
       {audioStatus === "error" && alignmentTracks.length > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-        >
-          <div
-            style={{
-              background: "#111827",
-              border: "1px solid #7f1d1d",
-              borderRadius: 14,
-              padding: "18px 22px",
-              color: "white",
-              minWidth: 280,
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: 16, marginBottom: 8 }}>Failed to render audio</div>
-            <div style={{ fontSize: 13, color: "#fca5a5" }}>
+        <div className="studio-overlay">
+          <div className="studio-overlay__card studio-overlay__card--error">
+            <div className="studio-overlay__title">Failed to render audio</div>
+            <div className="studio-overlay__body studio-overlay__body--error">
               {audioError || "Unknown error"}
             </div>
           </div>

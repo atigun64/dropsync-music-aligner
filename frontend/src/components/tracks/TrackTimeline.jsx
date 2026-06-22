@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AnnotationChip from "./AnnotationChip";
+import { formatTime } from "../../utils/formatTime";
+import { isEditableKeyboardTarget } from "../../utils/sortIds";
+import { getTrackAnnotationRegion } from "../../utils/annotationRegion";
 
-const HEADER_HEIGHT = 28;
-const TRACK_HEIGHT = 120;
+const HEADER_HEIGHT = 26;
+const SEEK_STEP_SECONDS = 10;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
-}
-
-function formatTime(seconds) {
-  if (!Number.isFinite(seconds)) return "0:00";
-  const whole = Math.max(0, Math.floor(seconds));
-  const mins = Math.floor(whole / 60);
-  const secs = whole % 60;
-  return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
 function getTickStep(duration) {
@@ -33,6 +28,11 @@ export default function TrackTimeline({
   const containerRef = useRef(null);
   const dragAnnotationRef = useRef(null);
   const dragPlayheadRef = useRef(null);
+  const currentTimeRef = useRef(0);
+  const durationRef = useRef(0);
+  const hasTrackRef = useRef(false);
+  const togglePlayRef = useRef(() => {});
+  const seekByRef = useRef(() => {});
 
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -42,7 +42,6 @@ export default function TrackTimeline({
     return Number(track.meta?.length_seconds ?? 0);
   }, [track]);
 
-  // Use backend route to fetch the actual audio file
   const audioSrc = useMemo(() => {
     if (!track?.track_id) return "";
     return `/api/tracks/${track.track_id}/audio`;
@@ -112,7 +111,43 @@ export default function TrackTimeline({
     }
   }
 
-  // When switching tracks, reset UI.
+  function seekBy(deltaSeconds) {
+    if (!track) return;
+    seekTo(clamp(currentTimeRef.current + deltaSeconds, 0, durationRef.current));
+  }
+
+  currentTimeRef.current = currentTime;
+  durationRef.current = duration;
+  hasTrackRef.current = Boolean(track);
+  togglePlayRef.current = togglePlay;
+  seekByRef.current = seekBy;
+
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (!hasTrackRef.current) return;
+      if (isEditableKeyboardTarget(e.target)) return;
+
+      if (e.code === "Space") {
+        if (e.repeat) return;
+        e.preventDefault();
+        e.stopPropagation();
+        togglePlayRef.current();
+        return;
+      }
+
+      if (e.code === "ArrowLeft" || e.code === "ArrowRight") {
+        e.preventDefault();
+        e.stopPropagation();
+        const delta =
+          e.code === "ArrowRight" ? SEEK_STEP_SECONDS : -SEEK_STEP_SECONDS;
+        seekByRef.current(delta);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, []);
+
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) {
@@ -124,7 +159,6 @@ export default function TrackTimeline({
     setIsPlaying(false);
   }, [track?.track_id]);
 
-  // Keep UI synced with actual audio playback.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -175,7 +209,6 @@ export default function TrackTimeline({
     onAddAnnotation?.(currentTime);
   }
 
-  // Drag annotation
   function startDragAnnotation(e, annotationIndex) {
     e.preventDefault();
     e.stopPropagation();
@@ -212,7 +245,6 @@ export default function TrackTimeline({
     window.removeEventListener("mouseup", stopDragAnnotation);
   }
 
-  // Drag playhead
   function startDragPlayhead(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -240,141 +272,80 @@ export default function TrackTimeline({
 
   if (!track) {
     return (
-      <div
-        style={{
-          padding: 16,
-          color: "#9ca3af",
-          border: "1px solid #374151",
-          borderRadius: 12,
-          background: "#111827",
-        }}
-      >
-        Select a track to see its timeline.
+      <div className="track-timeline__canvas track-timeline__canvas--empty">
+        Select a track from the library to preview and annotate.
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {/* Playback controls */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          flexWrap: "wrap",
-        }}
-      >
-        <button onClick={togglePlay} style={controlButtonStyle}>
+    <div className="track-timeline">
+      <div className="track-timeline__transport">
+        <button className={`btn btn--play`} onClick={togglePlay}>
           {isPlaying ? "Pause" : "Play"}
         </button>
 
-        <button onClick={() => seekTo(0)} style={controlButtonStyle}>
-          ⏮ Start
+        <button className="btn btn--icon" onClick={() => seekTo(0)} title="Go to start">
+          ⏮
         </button>
 
-        <button onClick={() => seekTo(duration)} style={controlButtonStyle}>
-          End ⏭
+        <button
+          className="btn btn--icon"
+          onClick={() => seekTo(duration)}
+          title="Go to end"
+        >
+          ⏭
         </button>
 
-        <button onClick={handleAddAnnotationAtPlayhead} style={controlButtonStyle}>
-          + Add annotation here
+        <button className="btn" onClick={handleAddAnnotationAtPlayhead}>
+          + Annotation
         </button>
 
-        <div style={{ color: "#9ca3af", fontSize: 13 }}>
-          Time: <b>{formatTime(currentTime)}</b> / <b>{formatTime(duration)}</b>
-        </div>
-
-        <div style={{ color: "#9ca3af", fontSize: 13 }}>
-          Annotations: <b>{track.annotations.length}</b>
+        <div className="track-timeline__timecode">
+          {formatTime(currentTime)} / {formatTime(duration)} · {track.annotations.length}{" "}
+          markers
         </div>
       </div>
 
-      {/* Actual audio element */}
-      <audio ref={audioRef} src={audioSrc} preload="metadata" />
+      <audio ref={audioRef} src={audioSrc} preload="metadata" style={{ display: "none" }} />
 
-      {/* Timeline */}
       <div
         ref={containerRef}
-        style={{
-          position: "relative",
-          height: HEADER_HEIGHT + TRACK_HEIGHT,
-          border: "1px solid #374151",
-          borderRadius: 12,
-          background: "#0b0f19",
-          overflow: "hidden",
-          userSelect: "none",
-        }}
+        className="track-timeline__canvas"
         onMouseDown={handleBackgroundMouseDown}
       >
-        {/* Axis */}
-        <div
-          style={{
-            position: "relative",
-            height: HEADER_HEIGHT,
-            borderBottom: "1px solid #1f2937",
-          }}
-        >
+        <div className="track-timeline__axis">
           {ticks.map((t) => (
             <div
               key={t}
-              style={{
-                position: "absolute",
-                left: `${timeToPct(t)}%`,
-                top: 0,
-                transform: "translateX(-1px)",
-                height: "100%",
-                borderLeft: "1px solid #1f2937",
-                color: "#9ca3af",
-                fontSize: 11,
-                paddingLeft: 4,
-                display: "flex",
-                alignItems: "flex-start",
-                whiteSpace: "nowrap",
-              }}
+              className="track-timeline__tick"
+              style={{ left: `${timeToPct(t)}%` }}
             >
-              {t}s
+              {formatTime(t)}
             </div>
           ))}
         </div>
 
-        {/* Playhead */}
         <div
-          style={{
-            position: "absolute",
-            top: HEADER_HEIGHT,
-            bottom: 0,
-            left: `${timeToPct(currentTime)}%`,
-            width: 2,
-            background: "#ef4444",
-            zIndex: 20,
-            pointerEvents: "none",
-          }}
+          className="track-timeline__playhead"
+          style={{ left: `${timeToPct(currentTime)}%` }}
         />
 
-        {/* Playhead handle */}
         <div
+          className="track-timeline__playhead-handle"
           onMouseDown={startDragPlayhead}
-          style={{
-            position: "absolute",
-            top: HEADER_HEIGHT - 6,
-            left: `${timeToPct(currentTime)}%`,
-            transform: "translateX(-50%)",
-            width: 14,
-            height: 14,
-            borderRadius: "50%",
-            background: "#ef4444",
-            zIndex: 21,
-            cursor: "ew-resize",
-            boxShadow: "0 0 0 3px rgba(239,68,68,0.2)",
-          }}
+          style={{ left: `${timeToPct(currentTime)}%` }}
           title="Drag playhead"
         />
 
-        {/* Annotation lane */}
-        <div style={{ position: "relative", height: TRACK_HEIGHT }}>
+        <div className="track-timeline__lane">
+          <span className="track-timeline__lane-label">Match windows (±5s)</span>
           {track.annotations.map((annotation, index) => {
-            const x = timeToPct(annotation.time_seconds);
+            const region = getTrackAnnotationRegion(annotation.time_seconds, duration);
+            if (!region.width) return null;
+
+            const leftPct = (region.start / duration) * 100;
+            const widthPct = (region.width / duration) * 100;
 
             return (
               <div
@@ -382,10 +353,13 @@ export default function TrackTimeline({
                 data-annotation-chip
                 style={{
                   position: "absolute",
-                  left: `${x}%`,
-                  top: 34,
-                  transform: "translateX(-50%)",
+                  left: `${leftPct}%`,
+                  width: `${widthPct}%`,
+                  top: 28,
+                  height: 28,
                   zIndex: 15,
+                  boxSizing: "border-box",
+                  padding: "0 1px",
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -394,14 +368,13 @@ export default function TrackTimeline({
               >
                 <AnnotationChip
                   annotation={annotation}
-                  selected={false}
+                  region={region}
                   onMouseDown={(e) => startDragAnnotation(e, index)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     onDeleteAnnotation?.(index);
                   }}
                 />
-
               </div>
             );
           })}
@@ -410,12 +383,3 @@ export default function TrackTimeline({
     </div>
   );
 }
-
-const controlButtonStyle = {
-  background: "#111827",
-  color: "white",
-  border: "1px solid #374151",
-  borderRadius: 10,
-  padding: "8px 12px",
-  cursor: "pointer",
-};

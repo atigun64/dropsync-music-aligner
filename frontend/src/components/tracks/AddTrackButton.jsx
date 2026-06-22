@@ -26,17 +26,17 @@ export default function AddTrackButton({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <button
+        className="btn btn--primary"
         onClick={() => singleInputRef.current?.click()}
-        style={buttonStyle}
       >
-        + Add Track
+        + Add track
       </button>
 
       <button
+        className="btn"
         onClick={() => folderInputRef.current?.click()}
-        style={buttonStyle}
       >
-        + Add Folder
+        + Add folder
       </button>
 
       <input
@@ -61,13 +61,3 @@ export default function AddTrackButton({
     </div>
   );
 }
-
-const buttonStyle = {
-  background: "#111827",
-  color: "white",
-  border: "1px solid #374151",
-  borderRadius: 10,
-  padding: "10px 12px",
-  cursor: "pointer",
-  textAlign: "left",
-};

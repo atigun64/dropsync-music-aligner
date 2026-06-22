@@ -7,52 +7,20 @@ export default function StudioSidebar({
   onStudioContextMenu,
 }) {
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        borderTop: "1px solid #1f2937",
-        background: "#0f172a",
-        minHeight: 0,
-        overflow: "hidden",
-      }}
-    >
-      <div style={{ padding: "14px 14px 10px", flex: "0 0 auto" }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Studios</h2>
-        <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>
-          {studios.length} studio sessions
-        </div>
-      </div>
+    <div className="library-panel__scroll">
+      {studios.map((studio) => (
+        <StudioListItem
+          key={studio}
+          studioId={studio}
+          selected={studio === selectedStudioId}
+          onSelect={onSelectStudio}
+          onContextMenu={onStudioContextMenu}
+        />
+      ))}
 
-      <div
-        style={{
-          flex: "1 1 auto",
-          minHeight: 0,
-          overflowY: "auto",
-          overflowX: "hidden",
-          padding: "0 10px 10px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}
-      >
-        {studios.map((studio) => (
-          <StudioListItem
-            key={studio}
-            studioId={studio}
-            selected={studio === selectedStudioId}
-            onSelect={onSelectStudio}
-            onContextMenu={onStudioContextMenu}
-          />
-        ))}
-
-        {studios.length === 0 && (
-          <div style={{ color: "#94a3b8", padding: 8, fontSize: 13 }}>
-            No studios yet.
-          </div>
-        )}
-      </div>
+      {studios.length === 0 && (
+        <div className="library-empty">No studios yet — create one below.</div>
+      )}
     </div>
   );
 }

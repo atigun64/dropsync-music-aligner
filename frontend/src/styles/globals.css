@@ -1,12 +1,43 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap");
+
 :root {
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  --bg-base: #090a0f;
+  --bg-elevated: #12141c;
+  --bg-surface: #181b26;
+  --bg-hover: #1f2433;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --accent-primary: #818cf8;
+  --accent-primary-soft: rgba(129, 140, 248, 0.18);
+  --accent-playhead: #fb7185;
+  --accent-playhead-soft: rgba(251, 113, 133, 0.25);
+  --accent-playhead-glow: rgba(251, 113, 133, 0.5);
+  --accent-annotation: #a78bfa;
+  --accent-play: #4ade80;
+  --accent-info: #93c5fd;
+  --accent-error: #fca5a5;
+  --accent-warning: #fcd34d;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  --font-sans: "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
-
-  color: #e5e7eb;
-  background: #0f1115;
-
+  color: var(--text-primary);
+  background: var(--bg-base);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -40,4 +71,193 @@ select {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Shared controls */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    opacity 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.btn--primary {
+  background: var(--accent-primary-soft);
+  border-color: rgba(129, 140, 248, 0.35);
+  color: #c7d2fe;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: rgba(129, 140, 248, 0.28);
+  border-color: rgba(129, 140, 248, 0.5);
+}
+
+.btn--play {
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.3);
+  color: #86efac;
+  min-width: 72px;
+}
+
+.btn--play:hover:not(:disabled) {
+  background: rgba(74, 222, 128, 0.2);
+}
+
+.btn--icon {
+  padding: 8px 10px;
+  min-width: 36px;
+}
+
+.input {
+  width: 100%;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.input:focus {
+  border-color: rgba(129, 140, 248, 0.5);
+  box-shadow: 0 0 0 3px var(--accent-primary-soft);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Custom scrollbars */
+
+.scrollbar,
+.studio-ops,
+.studio-tracker__lanes-scroll,
+.library-sidebar__scroll,
+.library-panel__scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.scrollbar::-webkit-scrollbar,
+.studio-ops::-webkit-scrollbar,
+.studio-tracker__lanes-scroll::-webkit-scrollbar,
+.library-sidebar__scroll::-webkit-scrollbar,
+.library-panel__scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar::-webkit-scrollbar-track,
+.studio-ops::-webkit-scrollbar-track,
+.studio-tracker__lanes-scroll::-webkit-scrollbar-track,
+.library-sidebar__scroll::-webkit-scrollbar-track,
+.library-panel__scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar::-webkit-scrollbar-thumb,
+.studio-ops::-webkit-scrollbar-thumb,
+.studio-tracker__lanes-scroll::-webkit-scrollbar-thumb,
+.library-sidebar__scroll::-webkit-scrollbar-thumb,
+.library-panel__scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar::-webkit-scrollbar-thumb:hover,
+.studio-ops::-webkit-scrollbar-thumb:hover,
+.studio-tracker__lanes-scroll::-webkit-scrollbar-thumb:hover,
+.library-sidebar__scroll::-webkit-scrollbar-thumb:hover,
+.library-panel__scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.24);
+}
+
+.scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Shared list items */
+
+.list-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  user-select: none;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.list-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+
+.list-item--selected {
+  background: var(--accent-primary-soft);
+  border-color: rgba(129, 140, 248, 0.4);
+  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.12);
+}
+
+.list-item__title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.list-item__subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
 }

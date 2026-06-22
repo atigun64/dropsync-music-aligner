@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from heapq import heappush, heappop
 from typing import List
 import math
 import random
@@ -21,44 +20,31 @@ class BeamState:
 
 class BeamSearch(Optimizer):
     """
-    Frontier-DP with:
-    - top-K states per frontier bucket
-    - candidate pre-ranking
-    - bucket deduplication
-    - diversity pruning
-    - randomized final selection
+    Simple DP by integer second:
+      dp[second] = top beam_width states reaching that frontier second
     """
 
     def __init__(
         self,
         beam_width: int = 100,
-        max_steps: int = 300,
-        frontier_bucket_size: float = 0.10,
         final_window: float = 10.0,
-        candidate_limit_per_state: int = 80,
-        request_anchor_limit: int = 5,
+        candidate_limit_per_state: int = 40,
+        request_anchor_limit: int = 3,
         randomize_final: bool = True,
         final_top_k: int = 20,
         final_temperature: float = 0.35,
         search_noise: float = 0.0,
         random_seed: int | None = None,
+        max_steps: int = 10000,
     ):
         self.beam_width = beam_width
-        self.max_steps = max_steps
-        self.frontier_bucket_size = frontier_bucket_size
         self.final_window = final_window
-
         self.candidate_limit_per_state = candidate_limit_per_state
         self.request_anchor_limit = request_anchor_limit
-
         self.randomize_final = randomize_final
         self.final_top_k = final_top_k
         self.final_temperature = final_temperature
-
-        # if > 0, ranking/pruning uses a small Gumbel noise
-        # this makes repeated runs explore different paths
         self.search_noise = search_noise
-
         self.rng = random.Random(random_seed)
 
     def optimize(self, query: Query, tracks: TrackLibrary) -> Alignment:
@@ -72,35 +58,20 @@ class BeamSearch(Optimizer):
             used_track_ids=set(),
         )
 
-        dp: dict[float, list[BeamState]] = {}
-        bucket_heap: list[float] = []
-        bucket_in_heap: set[float] = set()
+        max_second = self._max_second(query)
+        dp: list[list[BeamState]] = [[] for _ in range(max_second + 1)]
+        dp[0].append(initial_state)
 
-        initial_bucket = self._frontier_bucket(initial_state.frontier_end)
-        dp[initial_bucket] = [initial_state]
-        heappush(bucket_heap, initial_bucket)
-        bucket_in_heap.add(initial_bucket)
-
-        processed_buckets = 0
-
-        while bucket_heap and processed_buckets < self.max_steps:
-            bucket = heappop(bucket_heap)
-            bucket_in_heap.discard(bucket)
-
-            current_states = dp.get(bucket, [])
-            if not current_states:
-                processed_buckets += 1
+        for sec in range(max_second + 1):
+            if not dp[sec]:
                 continue
 
-            # prune before expansion
-            current_states = self._prune_bucket_states(current_states, query, limit=self.beam_width)
-            dp[bucket] = current_states
+            # keep only top-K for this second
+            dp[sec].sort(key=lambda s: self._ranking_score(s), reverse=True)
+            states = dp[sec][: self.beam_width]
+            dp[sec] = states
 
-            idx = 0
-            while idx < len(current_states):
-                state = current_states[idx]
-                idx += 1
-
+            for state in states:
                 if query.length is not None and state.frontier_end > query.length + self.final_window:
                     continue
 
@@ -108,7 +79,6 @@ class BeamSearch(Optimizer):
                 if not candidates:
                     continue
 
-                # rank + limit candidates before expensive full expansion
                 candidates = self._rank_candidates(state, candidates, query)
                 if self.candidate_limit_per_state > 0:
                     candidates = candidates[: self.candidate_limit_per_state]
@@ -116,35 +86,19 @@ class BeamSearch(Optimizer):
                 for candidate in candidates:
                     new_state = self._extend_state(state, candidate, query)
 
+                    if new_state.frontier_end <= state.frontier_end + 1e-9:
+                        continue
+
                     if query.length is not None and new_state.frontier_end > query.length + self.final_window:
                         continue
 
-                    self._push_state(
-                        dp=dp,
-                        bucket_heap=bucket_heap,
-                        bucket_in_heap=bucket_in_heap,
-                        state=new_state,
-                        current_bucket=bucket,
-                        query=query,
-                    )
+                    new_sec = self._frontier_bucket(new_state.frontier_end)
+                    if new_sec > max_second:
+                        continue
 
-                # if same-bucket insertions exploded, trim a little mid-pass
-                if len(current_states) > self.beam_width * 4:
-                    current_states = self._prune_bucket_states(
-                        current_states,
-                        query,
-                        limit=self.beam_width * 2,
-                    )
-                    dp[bucket] = current_states
-                    idx = min(idx, len(current_states))
-
-            # final prune for this bucket
-            dp[bucket] = self._prune_bucket_states(dp.get(bucket, []), query, limit=self.beam_width)
-
-            processed_buckets += 1
+                    dp[new_sec].append(new_state)
 
         final_states = self._collect_final_states(dp, query)
-
         if not final_states:
             return initial_alignment
 
@@ -157,67 +111,54 @@ class BeamSearch(Optimizer):
     # DP helpers
     # --------------------------------------------------
 
-    def _frontier_bucket(self, t: float) -> float:
-        if self.frontier_bucket_size <= 0:
-            return round(float(t), 6)
-        b = self.frontier_bucket_size
-        return round(math.ceil(t / b) * b, 6)
+    def _max_second(self, query: Query) -> int:
+        if query.length is not None:
+            return int(math.ceil(query.length + self.final_window + MAX_ACCEPTABLE_GAP))
+        return 600
 
-    def _push_state(
-        self,
-        dp: dict[float, list[BeamState]],
-        bucket_heap: list[float],
-        bucket_in_heap: set[float],
-        state: BeamState,
-        current_bucket: float,
-        query: Query,
-    ) -> None:
-        bucket = self._frontier_bucket(state.frontier_end)
-        states = dp.setdefault(bucket, [])
-        states.append(state)
+    def _frontier_bucket(self, t: float) -> int:
+        return max(0, int(round(t)))
 
-        # same-bucket states are processed immediately in current loop
-        if bucket == current_bucket:
-            return
+    def _collect_final_states(self, dp: list[list[BeamState]], query: Query) -> list[BeamState]:
+        all_states: list[BeamState] = []
+        for bucket in dp:
+            all_states.extend(bucket)
 
-        # future buckets: prune early
-        if len(states) > self.beam_width * 2:
-            dp[bucket] = self._prune_bucket_states(states, query, limit=self.beam_width)
-            states = dp[bucket]
-
-        if bucket not in bucket_in_heap:
-            heappush(bucket_heap, bucket)
-            bucket_in_heap.add(bucket)
-
-    def _collect_final_states(self, dp: dict[float, list[BeamState]], query: Query) -> list[BeamState]:
-        final_states: list[BeamState] = []
+        if not all_states:
+            return []
 
         if query.length is None:
-            for states in dp.values():
-                final_states.extend(states)
-            return final_states
+            all_states.sort(key=lambda s: s.score, reverse=True)
+            return all_states[: self.beam_width]
 
         lo = query.length - self.final_window
         hi = query.length + self.final_window
 
-        for states in dp.values():
-            for state in states:
-                if lo <= state.frontier_end <= hi:
-                    final_states.append(state)
+        in_window = [s for s in all_states if lo <= s.frontier_end <= hi]
+        if in_window:
+            in_window.sort(key=lambda s: score_alignment_final(s.alignment, query), reverse=True)
+            return in_window[: max(self.beam_width, self.final_top_k)]
 
-        # if window is empty, fall back to globally best reachable states
-        if not final_states:
-            for states in dp.values():
-                final_states.extend(states)
-
-        return final_states
+        # fallback: farthest-reaching states only
+        max_frontier = max(s.frontier_end for s in all_states)
+        near_farthest = [
+            s for s in all_states
+            if s.frontier_end >= max_frontier - 1.0
+        ]
+        near_farthest.sort(
+            key=lambda s: (s.frontier_end, score_alignment_final(s.alignment, query)),
+            reverse=True,
+        )
+        return near_farthest[: max(self.beam_width, self.final_top_k)]
 
     def _choose_final_state(self, final_states: list[BeamState], query: Query) -> BeamState:
         scored = [(state, score_alignment_final(state.alignment, query)) for state in final_states]
         scored.sort(key=lambda x: x[1], reverse=True)
+        return self._sample_scored_states(scored)
 
+    def _sample_scored_states(self, scored: list[tuple[BeamState, float]]) -> BeamState:
         if not scored:
-            return final_states[0]
+            raise ValueError("_sample_scored_states called with empty list")
 
         pool = scored[: max(1, self.final_top_k)]
 
@@ -227,12 +168,9 @@ class BeamSearch(Optimizer):
         temp = max(1e-6, float(self.final_temperature))
         max_score = max(score for _, score in pool)
 
-        weights = []
-        for _, s in pool:
-            w = math.exp((s - max_score) / temp)
-            weights.append(w)
-
+        weights = [math.exp((s - max_score) / temp) for _, s in pool]
         total = sum(weights)
+
         if total <= 0:
             return pool[0][0]
 
@@ -244,77 +182,6 @@ class BeamSearch(Optimizer):
                 return state
 
         return pool[-1][0]
-
-    def _prune_bucket_states(
-        self,
-        states: list[BeamState],
-        query: Query,
-        limit: int,
-    ) -> list[BeamState]:
-        if len(states) <= limit:
-            return self._dedupe_states(states)
-
-        states = self._dedupe_states(states)
-        if len(states) <= limit:
-            return states
-
-        # sort by noisy ranking score for exploration, but keep true score unchanged
-        ranked = sorted(states, key=lambda s: self._ranking_score(s), reverse=True)
-
-        # diversity step:
-        # first keep some states with different last tracks
-        diverse_target = max(1, limit // 3)
-        selected: list[BeamState] = []
-        selected_ids: set[int] = set()
-        seen_last_track: set[int | None] = set()
-
-        for s in ranked:
-            last_tid = self._last_track_id(s)
-            if last_tid not in seen_last_track:
-                selected.append(s)
-                selected_ids.add(id(s))
-                seen_last_track.add(last_tid)
-                if len(selected) >= diverse_target:
-                    break
-
-        # then fill remaining slots by best ranking
-        for s in ranked:
-            if id(s) in selected_ids:
-                continue
-            selected.append(s)
-            if len(selected) >= limit:
-                break
-
-        # final stable sort by true score
-        selected.sort(key=lambda s: s.score, reverse=True)
-        return selected[:limit]
-
-    def _dedupe_states(self, states: list[BeamState]) -> list[BeamState]:
-        best_by_sig: dict[tuple, BeamState] = {}
-
-        for s in states:
-            sig = self._state_signature(s)
-            prev = best_by_sig.get(sig)
-            if prev is None or s.score > prev.score:
-                best_by_sig[sig] = s
-
-        return list(best_by_sig.values())
-
-    def _state_signature(self, state: BeamState) -> tuple:
-        # exact enough to remove obvious duplicates without merging too aggressively
-        path = []
-        for t in state.alignment.tracks:
-            tid = t.track_id if t.track_id is not None else -1
-            st = round(float(t.start_time or 0.0), 2)
-            sp = round(float(t.speed or 1.0), 3)
-            path.append((tid, st, sp))
-        return tuple(path)
-
-    def _last_track_id(self, state: BeamState) -> int | None:
-        if not state.alignment.tracks:
-            return None
-        t = state.alignment.tracks[-1]
-        return t.track_id if t.track_id is not None else id(t)
 
     def _ranking_score(self, state: BeamState) -> float:
         score = state.score
@@ -336,19 +203,10 @@ class BeamSearch(Optimizer):
         query: Query,
         tracks: TrackLibrary
     ) -> list[tuple[Track, float, float]]:
-        """
-        Returns candidate placements:
-            (track, start_time, speed)
-
-        Strategy:
-        1) anchor to strong nearby requests
-        2) add sequential fallback
-        """
         candidates: list[tuple[Track, float, float]] = []
         seen: set[tuple[int, float, float]] = set()
 
         requested_drops = self._requested_drops(query)
-
         if not requested_drops:
             return self._sequential_candidates(state, query, tracks)
 
@@ -424,24 +282,13 @@ class BeamSearch(Optimizer):
         candidates: list[tuple[Track, float, float]],
         query: Query,
     ) -> list[tuple[Track, float, float]]:
-        ranked = sorted(
+        return sorted(
             candidates,
-            key=lambda c: self._candidate_priority(state, c, query),
+            key=lambda c: self._candidate_priority(state, c, query) + (
+                self.search_noise * self._gumbel() if self.search_noise > 0 else 0.0
+            ),
             reverse=True,
         )
-
-        # optional extra randomness in search:
-        # instead of always taking exactly same top-N, sample from a larger promising pool
-        if self.search_noise > 0 and self.candidate_limit_per_state > 0 and len(ranked) > self.candidate_limit_per_state:
-            pool_size = min(len(ranked), self.candidate_limit_per_state * 3)
-            pool = ranked[:pool_size]
-            pool.sort(
-                key=lambda c: self._candidate_priority(state, c, query) + self.search_noise * self._gumbel(),
-                reverse=True,
-            )
-            return pool
-
-        return ranked
 
     def _candidate_priority(
         self,
@@ -458,29 +305,19 @@ class BeamSearch(Optimizer):
 
         score = 0.0
 
-        # prefer stronger/preferred tracks a bit
         score += 0.5 * math.log(max(1e-6, preference))
+        score -= 0.05 * abs(start_time - frontier)
 
-        # prefer candidates near frontier
-        score -= 0.04 * abs(start_time - frontier)
-
-        # prefer not leaving too much unused gap
         if start_time > frontier:
-            score -= 0.08 * (start_time - frontier)
+            score -= 0.10 * (start_time - frontier)
 
-        # prefer ending near query end if known
         if query.length is not None:
-            remaining = query.length - frontier
-            cand_dur = max(0.0, end_time - frontier)
-            score -= 0.01 * abs(cand_dur - max(0.0, remaining))
+            score -= 0.01 * abs(query.length - end_time)
 
-            # small reward for ending inside final window
             if query.length - self.final_window <= end_time <= query.length + self.final_window:
                 score += 0.5
 
-        # reward drop matches
         score += self._drop_match_bonus(track, start_time, speed, query)
-
         return score
 
     def _drop_match_bonus(
@@ -553,7 +390,7 @@ class BeamSearch(Optimizer):
 
     def _anchor_offsets(self) -> list[float]:
         tol = float(DROP_MISS_TOLERANCE)
-        return [0.0, -tol, tol, -tol / 2, tol / 2, -tol / 4, tol / 4]
+        return [0.0, -tol, tol, -tol / 2, tol / 2]
 
     def _sequential_candidates(
         self,

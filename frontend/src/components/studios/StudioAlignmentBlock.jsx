@@ -1,8 +1,24 @@
 import { useEffect, useRef, useState } from "react";
+import { useAppDialog } from "../shared/AppDialogProvider";
+import { formatSpeedDisplay, formatSpeedInput } from "../../utils/formatSpeed";
+import {
+  getTrackAnnotationRegion,
+  regionCenterOffsetPct,
+  TRACK_ANNOTATION_HALF_WINDOW_SEC,
+} from "../../utils/annotationRegion";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
+
+const BLOCK_PALETTES = [
+  { bg: "rgba(99, 102, 241, 0.2)", border: "rgba(129, 140, 248, 0.45)" },
+  { bg: "rgba(244, 63, 94, 0.16)", border: "rgba(251, 113, 133, 0.4)" },
+  { bg: "rgba(34, 197, 94, 0.14)", border: "rgba(74, 222, 128, 0.38)" },
+  { bg: "rgba(245, 158, 11, 0.14)", border: "rgba(251, 191, 36, 0.4)" },
+  { bg: "rgba(6, 182, 212, 0.14)", border: "rgba(34, 211, 238, 0.38)" },
+  { bg: "rgba(168, 85, 247, 0.16)", border: "rgba(192, 132, 252, 0.4)" },
+];
 
 export default function StudioAlignmentBlock({
   trackerRef,
@@ -13,6 +29,9 @@ export default function StudioAlignmentBlock({
   startTimeSeconds,
   widthPct,
   top,
+  sourceDuration = 0,
+  sourceAnnotations = [],
+  interactionLocked = false,
   pausePlayback,
   onMoveCommit,
   onChangeSpeed,
@@ -23,6 +42,9 @@ export default function StudioAlignmentBlock({
   const dragRef = useRef(null);
   const previewRef = useRef(startTimeSeconds);
 
+  const palette = BLOCK_PALETTES[index % BLOCK_PALETTES.length];
+  const { prompt } = useAppDialog();
+
   useEffect(() => {
     if (!dragging) {
       setPreviewStart(startTimeSeconds);
@@ -30,16 +52,8 @@ export default function StudioAlignmentBlock({
     }
   }, [startTimeSeconds, dragging]);
 
-  function mouseToTime(e) {
-    const rect = trackerRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) return 0;
-
-    const x = e.clientX - rect.left;
-    const pct = clamp(x / rect.width, 0, 1);
-    return pct * Math.max(1, Number(timelineLength || 1));
-  }
-
   function startDrag(e) {
+    if (interactionLocked) return;
     if (e.button !== 0) return;
 
     e.preventDefault();
@@ -89,62 +103,89 @@ export default function StudioAlignmentBlock({
     window.addEventListener("mouseup", onUp);
   }
 
-  function handleContextMenu(e) {
+  async function handleContextMenu(e) {
+    if (interactionLocked) return;
     e.preventDefault();
     e.stopPropagation();
 
-    const raw = window.prompt("New speed for this block?", String(speed ?? 1));
-    if (raw === null) return;
+    const result = await prompt({
+      title: "Change block speed",
+      submitLabel: "Apply",
+      fields: [
+        {
+          key: "speed",
+          label: "Speed",
+          type: "decimal",
+          defaultValue: formatSpeedInput(speed ?? 1),
+          validate: (value) =>
+            value <= 0 ? "Speed must be a positive number" : null,
+        },
+      ],
+    });
+    if (!result) return;
 
-    const nextSpeed = Number(raw);
-    if (!Number.isFinite(nextSpeed) || nextSpeed <= 0) {
-      window.alert("Speed must be a positive number");
-      return;
-    }
+    const nextSpeed = Number(result.speed);
+    if (!Number.isFinite(nextSpeed) || nextSpeed <= 0) return;
 
     onChangeSpeed?.(index, nextSpeed);
   }
 
   const left = `${clamp((previewStart / Math.max(1, timelineLength)) * 100, 0, 100)}%`;
 
+  const dropAnnotations = sourceAnnotations.filter(
+    (ann) => String(ann.label || "").toLowerCase() === "drop"
+  );
+
   return (
     <div
       data-block
+      className={`studio-block${dragging ? " studio-block--dragging" : ""}`}
       onMouseDown={startDrag}
       onContextMenu={handleContextMenu}
-      title={`${trackId} | ${speed}x`}
+      title={`${trackId} | ${formatSpeedDisplay(speed)}x`}
       style={{
-        position: "absolute",
         left,
         top,
         width: `${widthPct}%`,
-        height: 40,
-        borderRadius: 10,
-        background: dragging ? "#273244" : "#1f2937",
-        border: dragging ? "1px solid #93c5fd" : "1px solid #475569",
-        color: "white",
-        padding: "10px 12px",
-        boxSizing: "border-box",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        cursor: "grab",
-        boxShadow: dragging ? "0 0 0 2px rgba(147,197,253,0.18)" : "none",
-        userSelect: "none",
+        "--block-bg": palette.bg,
+        "--block-border": palette.border,
+        "--block-border-hover": palette.border,
       }}
     >
-      <div
-        style={{
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        <b>{trackId}</b>
-      </div>
+      {sourceDuration > 0 &&
+        dropAnnotations.map((ann, annIdx) => {
+          const region = getTrackAnnotationRegion(
+            ann.time_seconds,
+            sourceDuration
+          );
+          if (!region.width) return null;
 
-      <div style={{ fontSize: 12, color: "#cbd5e1" }}>{speed}x</div>
+          const leftPct = (region.start / sourceDuration) * 100;
+          const widthPctInner = (region.width / sourceDuration) * 100;
+          const centerPct = regionCenterOffsetPct(region);
+
+          return (
+            <div
+              key={`${ann.label}-${annIdx}-${ann.time_seconds}`}
+              className="studio-block__drop"
+              style={{
+                left: `${leftPct}%`,
+                width: `${widthPctInner}%`,
+              }}
+              title={`${ann.label} @ ${Number(ann.time_seconds).toFixed(2)}s source (±${TRACK_ANNOTATION_HALF_WINDOW_SEC}s)`}
+            >
+              <span
+                className="studio-block__drop-center"
+                style={{ left: `${centerPct}%` }}
+              />
+            </div>
+          );
+        })}
+
+      <div className="studio-block__footer">
+        <div className="studio-block__id">{trackId}</div>
+        <div className="studio-block__speed">{formatSpeedDisplay(speed)}x</div>
+      </div>
     </div>
   );
 }

@@ -16,45 +16,19 @@ export default function StudioVideoPanel({
   }, [hasVideo, studioId, videoToken, videoSrc]);
 
   if (!hasVideo) {
-    return (
-      <div
-        style={{
-          background: "black",
-          minHeight: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-          position: "relative",
-        }}
-      />
-    );
+    return <div className="studio-video studio-video--empty" />;
   }
 
   return (
-    <div
-      style={{
-        background: "black",
-        minHeight: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        overflow: "hidden",
-        position: "relative",
-      }}
-    >
+    <div className="studio-video">
       <video
         ref={videoRef}
         key={computedVideoSrc}
+        className="studio-video__element"
         src={computedVideoSrc}
         preload="auto"
+        playsInline
         controls={false}
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          background: "black",
-        }}
         onLoadedMetadata={onLoadedMetadata}
         onTimeUpdate={onTimeUpdate}
       />

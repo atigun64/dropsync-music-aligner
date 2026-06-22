@@ -1,14 +1,35 @@
+import hashlib
+import json
 from pathlib import Path
+
 from pydub import AudioSegment
-from app.services.track_service import TrackService
-from app.storage.config import STUDIO_AUDIOS_DIR, STUDIOS_ROOT
+
 from app.models import AlignmentSpec
-from app.storage.studio_store import StudioStore
+from app.services.track_service import TrackService
+from app.storage.config import STUDIO_AUDIOS_DIR
 
 
 def _studio_audio_path(studio_id: str) -> Path:
     STUDIO_AUDIOS_DIR.mkdir(parents=True, exist_ok=True)
     return STUDIO_AUDIOS_DIR / f"{studio_id}.mp3"
+
+
+def _studio_audio_stamp_path(studio_id: str) -> Path:
+    return STUDIO_AUDIOS_DIR / f"{studio_id}.audio_stamp"
+
+
+def _alignment_audio_fingerprint(alignment: AlignmentSpec) -> str:
+    """Hash only fields that affect rendered studio audio."""
+    payload = [
+        {
+            "track_id": t.track_id,
+            "start_time_seconds": float(t.start_time_seconds),
+            "speed": float(t.speed),
+        }
+        for t in alignment.tracks
+    ]
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 def _make_music_file_from_alignment_spec(alignment: AlignmentSpec, studio_id: str) -> Path:
     out_path = _studio_audio_path(studio_id)
@@ -53,15 +74,16 @@ def _make_music_file_from_alignment_spec(alignment: AlignmentSpec, studio_id: st
 
 def ensure_studio_audio_for_alignment(alignment: AlignmentSpec, studio_id: str) -> Path:
     audio_path = _studio_audio_path(studio_id)
+    stamp_path = _studio_audio_stamp_path(studio_id)
+    fingerprint = _alignment_audio_fingerprint(alignment)
 
-    studio_store = StudioStore()
+    stamp_matches = (
+        stamp_path.exists()
+        and stamp_path.read_text(encoding="utf-8").strip() == fingerprint
+    )
 
-    if not audio_path.exists() or (
-        studio_store.alignment_path(studio_id).exists() and studio_store.alignment_mtime(studio_id) > audio_path.stat().st_mtime
-    ):
-        print("changed!")
+    if not audio_path.exists() or not stamp_matches:
         _make_music_file_from_alignment_spec(alignment, studio_id)
-    else:
-        print("unchanged!")
+        stamp_path.write_text(fingerprint, encoding="utf-8")
 
     return audio_path

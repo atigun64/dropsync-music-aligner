@@ -1,0 +1,14 @@
+{
+  "name": "music-matcher",
+  "private": true,
+  "scripts": {
+    "electron:install": "cd electron && npm install",
+    "electron:dev": "cd electron && npm run dev",
+    "electron:build-frontend": "cd frontend && npm run build",
+    "electron:build-backend": "python3 scripts/build_backend.py",
+    "electron:start": "npm run electron:build-frontend && cd electron && npm start",
+    "electron:package": "npm run electron:build-frontend && npm run electron:build-backend && cd electron && npm run dist",
+    "electron:package:linux": "npm run electron:build-frontend && npm run electron:build-backend && cd electron && npm run dist:linux",
+    "electron:package:win": "npm run electron:build-frontend && npm run electron:build-backend && cd electron && npm run dist:win"
+  }
+}

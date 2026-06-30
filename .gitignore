@@ -39,3 +39,11 @@ drop_model.joblib
 # Frontend build
 frontend/dist/
 frontend/build/
+
+# Backend bundle for desktop releases
+dist-backend/
+build-backend/
+
+# Electron
+electron/node_modules/
+electron/release/

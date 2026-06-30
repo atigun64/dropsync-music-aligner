@@ -26,7 +26,7 @@ class BeamSearch(Optimizer):
 
     def __init__(
         self,
-        beam_width: int = 100,
+        beam_width: int = 10,
         final_window: float = 10.0,
         candidate_limit_per_state: int = 40,
         request_anchor_limit: int = 3,

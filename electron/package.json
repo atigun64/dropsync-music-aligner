@@ -1,0 +1,21 @@
+{
+  "name": "music-matcher-electron",
+  "version": "0.1.0",
+  "description": "Desktop app for Music Matcher",
+  "author": "Music Matcher",
+  "homepage": "https://github.com/atigun64/music_matcher",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "dev": "cross-env ELECTRON_DEV=1 electron .",
+    "start": "electron .",
+    "dist": "electron-builder --config electron-builder.yml",
+    "dist:linux": "electron-builder --config electron-builder.yml --linux",
+    "dist:win": "electron-builder --config electron-builder.yml --win"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}

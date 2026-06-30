@@ -110,8 +110,7 @@ Deep dives:
 - [Optimizer](docs/optimizer.md)
 - [API](docs/api.md)
 - [Evaluation & metrics](docs/results.md)
-- [Portfolio / CV snippets](docs/portfolio.md)
-
+- 
 ---
 
 ## Technical story

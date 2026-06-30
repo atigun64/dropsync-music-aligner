@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sys
 from functools import lru_cache
+from pathlib import Path
 
 import numpy as np
 from joblib import load
@@ -8,10 +10,27 @@ from joblib import load
 from .window import build_feature_window_ml
 from .drop_heuristic import score_drops
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _resolve_model_path(model_path: str) -> str:
+    # Packaged backend (PyInstaller): model is bundled next to the extracted app.
+    if getattr(sys, "frozen", False):
+        bundled = Path(getattr(sys, "_MEIPASS", "")) / Path(model_path).name
+        if bundled.is_file():
+            return str(bundled)
+
+    # Dev / git clone: model at repo root, regardless of cwd.
+    repo_model = _REPO_ROOT / model_path
+    if repo_model.is_file():
+        return str(repo_model)
+
+    return model_path
+
 
 @lru_cache(maxsize=4)
 def _load_model(model_path: str = "drop_model.joblib"):
-    return load(model_path)
+    return load(_resolve_model_path(model_path))
 
 
 def _build_ml_vector(E, O, C, F, B, beat_idx: int, hscore: float) -> np.ndarray:

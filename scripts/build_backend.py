@@ -20,6 +20,11 @@ def main() -> int:
         print(f"Missing entry script: {ENTRY}", file=sys.stderr)
         return 1
 
+    model_path = ROOT / "drop_model.joblib"
+    if not model_path.is_file():
+        print(f"Missing drop model: {model_path}", file=sys.stderr)
+        return 1
+
     try:
         import PyInstaller  # noqa: F401
     except ImportError:
@@ -34,6 +39,9 @@ def main() -> int:
         shutil.rmtree(DIST)
     WORK.mkdir(parents=True, exist_ok=True)
 
+    data_sep = ";" if sys.platform == "win32" else ":"
+    add_data = f"{model_path}{data_sep}."
+
     cmd = [
         sys.executable,
         "-m",
@@ -47,6 +55,7 @@ def main() -> int:
         f"--workpath={WORK}",
         f"--specpath={WORK}",
         f"--paths={ROOT}",
+        f"--add-data={add_data}",
         "--collect-all",
         "essentia",
         "--collect-all",

@@ -12,6 +12,7 @@ const {
 const isDev = process.env.ELECTRON_DEV === "1";
 const devProjectRoot = path.resolve(__dirname, "..");
 const devFrontendDir = path.join(devProjectRoot, "frontend");
+const appIcon = path.join(__dirname, "build", "icon.png");
 
 let mainWindow = null;
 let backendProcess = null;
@@ -56,6 +57,7 @@ async function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: "Music Matcher",
+    icon: appIcon,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

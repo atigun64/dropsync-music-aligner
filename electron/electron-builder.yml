@@ -3,6 +3,8 @@ productName: Music Matcher
 copyright: Copyright © 2026 Music Matcher
 directories:
   output: release
+  buildResources: build
+icon: icon.png
 files:
   - main.js
   - backend.js

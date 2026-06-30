@@ -34,8 +34,6 @@ app/data/
 /music_drop/data backup
 /music_downloads
 
-drop_model.joblib
-
 # Frontend build
 frontend/dist/
 frontend/build/
